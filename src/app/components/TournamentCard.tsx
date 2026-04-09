@@ -1,0 +1,75 @@
+import type { Tournament } from "../data";
+import { Calendar, Trophy, Lock } from "lucide-react";
+import { Link } from "react-router-dom";
+
+interface TournamentCardProps {
+  tournament: Tournament;
+  onJoinClick?: () => void;
+}
+
+export function TournamentCard({ tournament, onJoinClick }: TournamentCardProps) {
+  
+  // 🔥 NEW: Tiny Status Badge Helper 🔥
+  const getStatusBadge = (status?: string) => {
+    const s = status?.toLowerCase() || 'upcoming';
+    if (s === 'ongoing' || s === 'live') return <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase flex items-center gap-1 w-max"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>LIVE</span>;
+    if (s === 'completed') return <span className="bg-neutral-800 text-neutral-400 border border-neutral-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">COMPLETED</span>;
+    return <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase">UPCOMING</span>;
+  };
+
+  return (
+    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 hover:border-fuchsia-500/50 transition-colors flex flex-col h-full relative overflow-hidden">
+      
+      {/* Visual Badge for Private Tournaments */}
+      {tournament.isPrivate && (
+        <div className="absolute top-0 right-0 bg-fuchsia-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg flex items-center shadow-lg shadow-fuchsia-500/20">
+          <Lock className="w-3 h-3 mr-1" /> PRIVATE
+        </div>
+      )}
+
+     <div className="flex justify-between items-start mb-2 gap-2 mt-4">
+        <h3 className="text-xl font-bold text-white truncate">{tournament.title}</h3>
+        
+        {/* The Room Code Badge */}
+        {tournament.short_code && (
+          <div className="bg-neutral-950 border border-neutral-800 text-cyan-400 text-xs font-mono font-bold px-2 py-1 rounded shrink-0 flex items-center shadow-inner">
+            <span className="text-neutral-500 mr-1 text-[10px] uppercase tracking-wider">Code</span>
+            {tournament.short_code}
+          </div>
+        )}
+      </div>
+
+      {/* 🔥 THE NEW STATUS BADGE DROPPED HERE 🔥 */}
+      <div className="mb-4">
+        {getStatusBadge(tournament.status)}
+      </div>
+      
+      <div className="flex items-center text-neutral-400 text-sm mb-2">
+        <Calendar className="w-4 h-4 mr-2 text-cyan-500 shrink-0" /> 
+        <span className="truncate">{new Date(tournament.date).toLocaleDateString()}</span>
+      </div>
+      
+      <div className="flex items-center text-neutral-400 text-sm mb-6">
+        <Trophy className="w-4 h-4 mr-2 text-fuchsia-500 shrink-0" /> 
+        <span className="truncate">{tournament.prizePool || "Bragging Rights"}</span>
+      </div>
+      
+      {/* Button Row */}
+      <div className="mt-auto flex gap-3">
+        <Link 
+          to={`/tournaments/${tournament.id}`} 
+          className="flex-1 py-2.5 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg transition-colors text-sm font-semibold"
+        >
+          Details
+        </Link>
+        
+        <button 
+          onClick={onJoinClick}
+          className="flex-1 py-2.5 bg-gradient-to-r from-fuchsia-600 to-cyan-600 hover:from-fuchsia-500 hover:to-cyan-500 text-white rounded-lg transition-all text-sm font-bold shadow-lg shadow-fuchsia-500/20"
+        >
+          Join
+        </button>
+      </div>
+    </div>
+  );
+}
