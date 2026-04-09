@@ -6,7 +6,7 @@ import { HostTournament } from "./app/pages/Host";
 import { Profile } from "./app/pages/Profile"; // 1. Add this import
 import { TournamentDetails } from "./app/pages/TournamentDetails";
 import { Admin } from "./app/pages/Admin";
-
+// git check
   
 
 export default function App() {
