@@ -19,7 +19,7 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col selection:bg-fuchsia-500 selection:text-white">
-      {/* Navbar */}
+      {/* Navbar - Sticky ensures it stays on top while the whole page scrolls */}
       <nav className="sticky top-0 z-50 bg-neutral-900/80 backdrop-blur-md border-b border-neutral-800 h-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
           <div className="flex items-center justify-between h-full">
@@ -118,7 +118,7 @@ export function Layout() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="md:hidden overflow-hidden bg-neutral-900 border-b border-neutral-800 absolute w-full"
+              className="md:hidden overflow-hidden bg-neutral-900 border-b border-neutral-800 absolute w-full shadow-2xl"
             >
               <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
                 {navLinks.map((link) => (
@@ -195,8 +195,8 @@ export function Layout() {
         </AnimatePresence>
       </nav>
 
-      {/* Main Content */}
-      <main className="flex-grow flex flex-col w-full h-[calc(100vh-64px)] relative">
+      {/* 🔥 THE ULTIMATE FIX: Removed fixed height and internal overflow. Let the browser do the work! 🔥 */}
+      <main className="flex-grow flex flex-col w-full relative">
         <Outlet />
       </main>
     </div>

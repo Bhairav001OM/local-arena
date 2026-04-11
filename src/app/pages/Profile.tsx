@@ -415,7 +415,7 @@ export function Profile() {
           )}
         </div>
 
-        {/* =========================================
+       {/* =========================================
             SECTION 3: TOURNAMENT DASHBOARD 
             ========================================= */}
         <div className="pt-6 border-t border-neutral-800">
@@ -500,5 +500,4 @@ export function Profile() {
 
       </div>
     </div>
-  );
-}
+)};
