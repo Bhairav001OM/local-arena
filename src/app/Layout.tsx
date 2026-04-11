@@ -55,6 +55,16 @@ export function Layout() {
                     {link.label}
                   </NavLink>
                 ))}
+
+                {/* 🚨 SECRET ADMIN BUTTON (Desktop) */}
+                {user?.email === "tumhara-email@gmail.com" && (
+                  <Link 
+                    to="/admin" 
+                    className="flex items-center px-4 py-2 ml-2 rounded-md text-sm font-bold bg-red-600/10 text-red-500 hover:bg-red-600/20 border border-red-500/30 transition-colors"
+                  >
+                    👑 Admin
+                  </Link>
+                )}
               </div>
 
               <div className="flex items-center space-x-4">
@@ -123,10 +133,21 @@ export function Layout() {
                   </NavLink>
                 ))}
 
-                {/* NEW: Profile and Auth section for Mobile */}
+                {/* Mobile Profile & Auth Section */}
                 <div className="mt-4 pt-4 border-t border-neutral-800">
                   {user ? (
                     <>
+                      {/* 🚨 SECRET ADMIN BUTTON (Mobile) */}
+                      {user?.email === "tumhara-email@gmail.com" && (
+                        <Link
+                          to="/admin"
+                          onClick={closeMenu}
+                          className="flex items-center px-3 py-2 mb-2 rounded-md text-base font-bold bg-red-900/30 text-red-400 border border-red-500/20 w-full"
+                        >
+                          👑 Admin Panel
+                        </Link>
+                      )}
+                      
                       <Link
                         to="/profile"
                         onClick={closeMenu}
@@ -135,6 +156,7 @@ export function Layout() {
                         <UserIcon className="w-5 h-5 mr-2" />
                         Profile
                       </Link>
+                      
                       <button
                         onClick={() => {
                           signOut();
