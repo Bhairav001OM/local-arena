@@ -9,7 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase"; 
 import { 
   getTournamentById, fetchMessages, sendMessage, fetchTournamentRoster, 
-  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, type Tournament 
+  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, type Tournament 
 } from "../../app/data"; 
 
 export function TournamentDetails() {
@@ -44,6 +44,11 @@ export function TournamentDetails() {
   const [playerGameIds, setPlayerGameIds] = useState<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [roster, setRoster] = useState<any[]>([]);
+
+  // 🔥 NEW: Join Tournament State 🔥
+  const [passwordInput, setPasswordInput] = useState("");
+  const [showPasswordBox, setShowPasswordBox] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -99,7 +104,7 @@ export function TournamentDetails() {
         if (user?.id) isVIP = rosterData.some((player: { user_id: string; }) => player.user_id === user.id);
         setHasAccess(isVIP);
 
-        if (isVIP || !data.isPrivate || user?.id === data.host_id) await loadChatData(data);
+        if (isVIP || user?.id === data.host_id) await loadChatData(data);
       } catch (error) { console.error("Failed to load lobby", error); } 
       finally { if (isMounted && !isBanned) setIsLoading(false); }
     }
@@ -108,10 +113,10 @@ export function TournamentDetails() {
   }, [id, user?.id]); 
 
   useEffect(() => {
-    if (!id || !tournament || isBanned) return;
+    if (!id || !tournament || isBanned || (!hasAccess && user?.id !== tournament.host_id)) return;
     const channel = supabase.channel('live-chat').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tournament_messages', filter: `tournament_id=eq.${id}` }, () => { loadChatData(tournament); }).subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [id, tournament, isBanned]);
+  }, [id, tournament, isBanned, hasAccess]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,6 +127,34 @@ export function TournamentDetails() {
     setMessages((prev) => [...prev, { id: `temp-${Date.now()}`, user_id: user.id, message: textToSend, created_at: new Date().toISOString(), profiles: myProfile }]);
     setIsSending(true);
     try { await sendMessage(id, user.id, textToSend); } catch (error) { console.error("Failed to send", error); } finally { setIsSending(false); }
+  };
+
+  // 🔥 PLAYER: JOIN TOURNAMENT WITH PASSWORD CHECK 🔥
+  const handleJoinTournament = async () => {
+    if (!user || !id || !tournament) return;
+    
+    // Check if private and password box isn't open yet
+    const isPrivateArena = tournament.isPrivate || (tournament as any).is_private;
+    if (isPrivateArena && !showPasswordBox) {
+      setShowPasswordBox(true);
+      return;
+    }
+
+    if (isPrivateArena && !passwordInput.trim()) {
+      alert("Please enter the password!");
+      return;
+    }
+
+    setIsJoining(true);
+    try {
+      await joinTournament(id, user.id, passwordInput);
+      alert("✅ Successfully Joined!");
+      window.location.reload(); // Refresh to load lobby
+    } catch (error: any) {
+      alert(error.message || "Failed to join.");
+    } finally {
+      setIsJoining(false);
+    }
   };
 
   // 🔥 HOST: COMPLETE MATCH WITH UPLOAD 🔥
@@ -185,6 +218,7 @@ export function TournamentDetails() {
   const myVote = votes.find(v => v.user_id === user?.id);
   const approvedCount = votes.filter(v => v.is_approved).length;
   const disputedCount = votes.filter(v => !v.is_approved).length;
+  const isPrivateArena = tournament.isPrivate || (tournament as any).is_private;
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white pb-24">
@@ -197,6 +231,14 @@ export function TournamentDetails() {
             <div className="flex flex-wrap items-center gap-4">
               <h1 className="text-4xl md:text-5xl font-black">{tournament.title}</h1>
               {tournament.short_code && <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-lg font-mono font-bold">Code: {tournament.short_code}</span>}
+              
+              {/* 🔥 NEW: Private Badge 🔥 */}
+              {isPrivateArena && (
+                <span className="bg-red-900/30 text-red-400 border border-red-500/30 px-3 py-1 rounded-lg font-bold flex items-center gap-1 text-sm">
+                  <Lock className="w-4 h-4" /> Private
+                </span>
+              )}
+
               <span className={`px-4 py-1 rounded-full font-bold uppercase tracking-wider text-sm border ${
                 tournament.status === "completed" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50" :
                 tournament.status === "verifying" ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/50" :
@@ -239,7 +281,7 @@ export function TournamentDetails() {
               </div>
             )}
 
-            {/* 2. VERIFICATION UI (Shows for everyone when Host submits) */}
+            {/* 2. VERIFICATION UI */}
             {(tournament.status === "verifying" || tournament.status === "completed" || tournament.status === "disputed") && tournament.result_image && (
               <div className="bg-yellow-950/20 border-2 border-yellow-500/50 rounded-2xl p-6">
                 <h3 className="text-lg font-black text-yellow-400 flex items-center gap-2 mb-4">
@@ -250,7 +292,6 @@ export function TournamentDetails() {
                   🔍 View Host's Screenshot
                 </a>
 
-                {/* Voting & Tally only show if it's not fully completed yet */}
                 {(tournament.status === "verifying" || tournament.status === "disputed") && (
                   <>
                     <div className="flex justify-between text-sm font-bold mb-4 border-b border-neutral-800 pb-4">
@@ -338,31 +379,61 @@ export function TournamentDetails() {
 
           </div>
 
-          {/* ======================= RIGHT COLUMN (CHAT) ======================= */}
+          {/* ======================= RIGHT COLUMN (JOIN / CHAT) ======================= */}
           <div className="lg:col-span-2">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col h-[600px] overflow-hidden relative">
-              <div className="p-4 border-b border-neutral-800 bg-neutral-900/90 backdrop-blur z-10 flex items-center justify-between">
-                <div className="flex items-center gap-3"><MessageSquare className="w-5 h-5 text-cyan-400" /><h3 className="text-lg font-bold">Live Match Lobby</h3></div>
-                {(tournament.status === "completed" || tournament.status === "verifying" || tournament.status === "disputed") && <span className="text-xs text-yellow-400 font-bold bg-yellow-500/10 px-2 py-1 rounded">MATCH LOCKED</span>}
+            {!hasAccess && !isHost ? (
+              /* 🔥 NEW: JOIN PANEL IF NOT REGISTERED 🔥 */
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col items-center justify-center h-[600px] p-6 text-center shadow-xl">
+                <Lock className="w-16 h-16 text-cyan-500 mb-6" />
+                <h2 className="text-3xl font-black mb-2">Join this Arena</h2>
+                <p className="text-neutral-400 mb-8 max-w-md">You need to register to participate in this tournament and access the live match lobby.</p>
+
+                {isPrivateArena && showPasswordBox && (
+                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm mb-4">
+                    <input
+                      type="password"
+                      placeholder="Enter Secret Password 🔒"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      className="w-full px-4 py-3 bg-neutral-950 border border-cyan-500/50 rounded-xl text-white focus:outline-none focus:border-cyan-400 text-center font-bold tracking-widest"
+                    />
+                  </motion.div>
+                )}
+
+                <button
+                  onClick={handleJoinTournament}
+                  disabled={isJoining}
+                  className="px-10 py-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+                >
+                  {isJoining ? <Loader2 className="w-5 h-5 animate-spin" /> : (isPrivateArena && showPasswordBox ? "Confirm Password" : "Join Tournament")}
+                </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-neutral-950">
-                {messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.user_id === user?.id ? "justify-end" : "justify-start"}`}>
-                    <div className={`px-4 py-3 rounded-2xl ${msg.user_id === user?.id ? "bg-cyan-600 text-white" : "bg-neutral-800 text-neutral-200"}`}>
-                      <p className="text-xs opacity-50 mb-1">{msg.profiles?.display_name}</p>
-                      <p className="text-sm">{msg.message}</p>
+            ) : (
+              /* EXISTING LIVE CHAT UI */
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col h-[600px] overflow-hidden relative">
+                <div className="p-4 border-b border-neutral-800 bg-neutral-900/90 backdrop-blur z-10 flex items-center justify-between">
+                  <div className="flex items-center gap-3"><MessageSquare className="w-5 h-5 text-cyan-400" /><h3 className="text-lg font-bold">Live Match Lobby</h3></div>
+                  {(tournament.status === "completed" || tournament.status === "verifying" || tournament.status === "disputed") && <span className="text-xs text-yellow-400 font-bold bg-yellow-500/10 px-2 py-1 rounded">MATCH LOCKED</span>}
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-neutral-950">
+                  {messages.map((msg) => (
+                    <div key={msg.id} className={`flex ${msg.user_id === user?.id ? "justify-end" : "justify-start"}`}>
+                      <div className={`px-4 py-3 rounded-2xl ${msg.user_id === user?.id ? "bg-cyan-600 text-white" : "bg-neutral-800 text-neutral-200"}`}>
+                        <p className="text-xs opacity-50 mb-1">{msg.profiles?.display_name}</p>
+                        <p className="text-sm">{msg.message}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
+                  ))}
+                  <div ref={chatEndRef} />
+                </div>
+                <div className="p-4 bg-neutral-900 border-t border-neutral-800">
+                  <form onSubmit={handleSendMessage} className="flex gap-2">
+                    <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} disabled={tournament.status === "completed" || tournament.status === "verifying" || tournament.status === "disputed"} className="flex-1 bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500" />
+                    <button type="submit" disabled={isSending || !newMessage.trim() || tournament.status === "completed" || tournament.status === "verifying" || tournament.status === "disputed"} className="px-5 bg-cyan-600 text-white rounded-xl font-bold"><Send className="w-5 h-5" /></button>
+                  </form>
+                </div>
               </div>
-              <div className="p-4 bg-neutral-900 border-t border-neutral-800">
-                <form onSubmit={handleSendMessage} className="flex gap-2">
-                  <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} disabled={tournament.status === "completed" || tournament.status === "verifying" || tournament.status === "disputed"} className="flex-1 bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500" />
-                  <button type="submit" disabled={isSending || !newMessage.trim() || tournament.status === "completed" || tournament.status === "verifying" || tournament.status === "disputed"} className="px-5 bg-cyan-600 text-white rounded-xl font-bold"><Send className="w-5 h-5" /></button>
-                </form>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
