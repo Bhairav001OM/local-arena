@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams,  useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getUserProfile, fetchFullUserProfile, sendFriendRequest, type EnhancedUserProfile } from "../data"; 
-import { Gamepad2, Loader2, Crown, Swords,  UserPlus,  MessageSquare, Check, Copy } from "lucide-react";
+import { Gamepad2, Loader2,  UserPlus, MessageSquare, Check, Copy, Flag } from "lucide-react";
 import { supabase } from "../../utils/supabase";
 
 // 🔥 FIX: Removed 'export'
@@ -83,6 +83,7 @@ export function PublicProfile() {
     <div className="min-h-screen bg-neutral-950 text-white py-12 px-4 sm:px-6 lg:px-8 pb-24 w-full">
       <div className="max-w-5xl mx-auto space-y-10 w-full">
         
+        {/* PUBLIC PROFILE HEADER & STATS */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-6 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-64 h-64 bg-cyan-500/10 blur-[80px] rounded-full pointer-events-none" />
           <img src={profile.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=fallback"} alt="Avatar" className="w-28 h-28 rounded-full border-2 border-cyan-500 object-cover z-10 shrink-0" />
@@ -102,9 +103,36 @@ export function PublicProfile() {
               </div>
             )}
           </div>
-          <div className="flex gap-4 z-10 mt-6 md:mt-0">
-            <div className="bg-neutral-950 border border-neutral-800 px-6 py-4 rounded-2xl flex flex-col items-center"><Swords className="w-5 h-5 text-cyan-400 mb-2" /><span className="text-3xl font-black">{enhancedData?.stats.tournamentsPlayed || 0}</span></div>
-            <div className="bg-neutral-950 border border-neutral-800 px-6 py-4 rounded-2xl flex flex-col items-center"><Crown className="w-5 h-5 text-fuchsia-400 mb-2" /><span className="text-3xl font-black">{enhancedData?.stats.tournamentsHosted || 0}</span></div>
+          
+          {/* 🔥 NEW STATS ROW: Penalties, Joined, Completed, Hosted 🔥 */}
+          <div className="flex flex-wrap justify-center gap-3 z-10 mt-6 md:mt-0">
+            
+            {/* Penalty Tracker */}
+            <div className={`px-4 py-3 rounded-xl border flex flex-col items-center justify-center ${
+              (profile.penalties || 0) >= 3 ? "bg-red-900/30 border-red-500 text-red-500" : "bg-neutral-950 border-neutral-800 text-neutral-400"
+            }`}>
+              <Flag className="w-5 h-5 mb-1" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">Penalties</span>
+              <span className="text-xl font-black">{(profile.penalties || 0)} / 5</span>
+            </div>
+
+            {/* Joined */}
+            <div className="bg-neutral-950 border border-neutral-800 px-5 py-3 rounded-xl flex flex-col items-center justify-center">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Joined</span>
+              <span className="text-2xl font-black text-emerald-400">{enhancedData?.playerTournaments?.upcoming?.length || 0}</span>
+            </div>
+            
+            {/* Completed (Replaced Played) */}
+            <div className="bg-neutral-950 border border-neutral-800 px-5 py-3 rounded-xl flex flex-col items-center justify-center">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Completed</span>
+              <span className="text-2xl font-black text-cyan-400">{enhancedData?.playerTournaments?.completed?.length || 0}</span>
+            </div>
+
+            {/* Hosted */}
+            <div className="bg-neutral-950 border border-neutral-800 px-5 py-3 rounded-xl flex flex-col items-center justify-center">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Hosted</span>
+              <span className="text-2xl font-black text-fuchsia-500">{enhancedData?.stats?.tournamentsHosted || 0}</span>
+            </div>
           </div>
         </div>
 
