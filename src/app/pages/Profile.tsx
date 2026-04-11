@@ -10,13 +10,13 @@ import {
 } from "../data"; 
 import { 
   ShieldAlert, Gamepad2, AlertCircle, CheckCircle2, Loader2, Save, Edit2, 
-  Swords, Crown, Calendar, Play, ExternalLink, Copy, Check 
+  Swords, Crown, Calendar, Play, ExternalLink, Copy, Check, Flag 
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import { supabase } from "../../utils/supabase"; 
 
-// 🔥 FIX: Removed 'export' from here to stop Vite Fast Refresh from crashing
+// 🔥 FIX: No 'export' here to prevent Vite Fast Refresh crash
 const generateFriendCode = (uuid: string) => {
   if (!uuid) return "";
   return parseInt(uuid.split('-')[0], 16).toString().padStart(10, '0');
@@ -46,6 +46,7 @@ export function Profile() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Copy Friend Code State
   const [copied, setCopied] = useState(false);
 
   const loadData = async () => {
@@ -81,9 +82,12 @@ export function Profile() {
 
   useEffect(() => {
     loadData();
+
+    // 🚨 NUCLEAR OPTION: Force the spinner off after 3 seconds
     const safetyKillSwitch = setTimeout(() => {
       setIsLoading(false);
     }, 3000);
+
     return () => clearTimeout(safetyKillSwitch);
   }, [user]);
 
@@ -98,7 +102,7 @@ export function Profile() {
     
     try {
       await saveLinkedGame(user!.id, gameId, inGameId, inGameName);
-      await loadData(); 
+      await loadData(); // Reload to update UI
       setEditingGame(null);
       setIsAddingNewGame(false);
       setSelectedGameToAdd("");
@@ -133,6 +137,7 @@ export function Profile() {
     );
   }
 
+  // Mini-card for the dashboard columns
   const MiniTournamentCard = ({ tournament }: { tournament: Tournament }) => (
     <Link to={`/tournaments/${tournament.id}`} className="block mb-3">
       <div className="bg-neutral-900 border border-neutral-800 hover:border-cyan-500/50 transition-colors rounded-xl p-4 flex justify-between items-center group">
@@ -152,6 +157,7 @@ export function Profile() {
     <div className="min-h-screen bg-neutral-950 text-white py-12 px-4 sm:px-6 lg:px-8 pb-24">
       <div className="max-w-5xl mx-auto space-y-12">
         
+        {/* 🚨 BANNED WARNING BANNER 🚨 */}
         {profile?.is_banned && (
           <motion.div 
             initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
@@ -163,13 +169,15 @@ export function Profile() {
             <div>
               <h2 className="text-2xl font-black text-red-500 uppercase tracking-widest mb-1">Account Suspended</h2>
               <p className="text-red-200 font-medium">
-                Your account has been banned by a System Administrator for violating platform rules. You can no longer join or host tournaments.
+                Your account has been banned due to 5 No-Show penalties or violating platform rules. You can no longer join or host tournaments.
               </p>
             </div>
           </motion.div>
         )}
 
-        {/* HEADER SECTION */}
+        {/* =========================================
+            SECTION 1: MASTER PROFILE HEADER 
+            ========================================= */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-fuchsia-500/10 blur-[80px] rounded-full pointer-events-none" />
           
@@ -197,25 +205,44 @@ export function Profile() {
             </div>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-4 z-10 mt-4 md:mt-0">
+          <div className="flex flex-wrap justify-center gap-3 z-10 mt-4 md:mt-0">
+            
+            {/* Penalty Tracker */}
+            <div className={`px-4 py-3 rounded-xl border flex flex-col items-center justify-center ${
+              (profile.penalties || 0) >= 3 ? "bg-red-900/30 border-red-500 text-red-500" : "bg-neutral-950 border-neutral-800 text-neutral-400"
+            }`}>
+              <Flag className="w-5 h-5 mb-1" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">Penalties</span>
+              <span className="text-xl font-black">{(profile.penalties || 0)} / 5</span>
+            </div>
+
+            {/* Host Strike Tracker */}
             <div className={`px-4 py-3 rounded-xl border flex flex-col items-center justify-center ${
               profile.host_strikes >= 2 ? "bg-red-500/10 border-red-500" : 
               profile.host_strikes === 1 ? "bg-yellow-500/10 border-yellow-500" : 
               "bg-emerald-500/10 border-emerald-500/50"
             }`}>
-              <ShieldAlert className={`w-6 h-6 mb-1 ${
+              <ShieldAlert className={`w-5 h-5 mb-1 ${
                 profile.host_strikes >= 2 ? "text-red-500" : 
                 profile.host_strikes === 1 ? "text-yellow-500" : 
                 "text-emerald-500"
               }`} />
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Host Strikes</span>
-              <span className="text-lg font-black">{profile.host_strikes} / 2</span>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Strikes</span>
+              <span className="text-xl font-black">{profile.host_strikes} / 2</span>
             </div>
 
+            {/* Dashboard Stats */}
             <div className="bg-neutral-950 border border-neutral-800 px-5 py-3 rounded-xl flex flex-col items-center justify-center">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Played</span>
-              <span className="text-2xl font-black text-cyan-400">{enhancedData.stats.tournamentsPlayed}</span>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Joined</span>
+              <span className="text-2xl font-black text-emerald-400">{enhancedData.playerTournaments.upcoming.length}</span>
             </div>
+            
+            {/* 🔥 UPDATED: Played is now Completed 🔥 */}
+            <div className="bg-neutral-950 border border-neutral-800 px-5 py-3 rounded-xl flex flex-col items-center justify-center">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Completed</span>
+              <span className="text-2xl font-black text-cyan-400">{enhancedData.playerTournaments.completed.length}</span>
+            </div>
+
             <div className="bg-neutral-950 border border-neutral-800 px-5 py-3 rounded-xl flex flex-col items-center justify-center">
               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Hosted</span>
               <span className="text-2xl font-black text-fuchsia-500">{enhancedData.stats.tournamentsHosted}</span>
@@ -230,7 +257,9 @@ export function Profile() {
           </div>
         )}
 
-        {/* LINKED GAMES */}
+        {/* =========================================
+            SECTION 2: ANTI-SMURF IDENTITY LOCK (LINKED GAMES)
+            ========================================= */}
         <div>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
             <div>
@@ -242,6 +271,7 @@ export function Profile() {
               </p>
             </div>
             
+            {/* The Add Game Button (Only shows games not yet linked) */}
             {!isAddingNewGame && platformGames.filter(g => !linkedGames.some(lg => lg.game_id === g.id)).length > 0 && (
               <button
                 onClick={() => setIsAddingNewGame(true)}
@@ -252,6 +282,7 @@ export function Profile() {
             )}
           </div>
 
+          {/* THE ADD NEW GAME FORM */}
           {isAddingNewGame && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-neutral-900/80 backdrop-blur-sm border border-cyan-500/30 rounded-2xl p-6 mb-8 shadow-xl shadow-cyan-500/5">
               <h3 className="font-bold text-lg mb-4 text-cyan-400 flex items-center gap-2">
@@ -290,6 +321,7 @@ export function Profile() {
             </motion.div>
           )}
 
+          {/* LINKED GAMES GRID */}
           {linkedGames.length === 0 && !isAddingNewGame ? (
             <div className="text-center py-16 border border-neutral-800 border-dashed rounded-3xl bg-neutral-900/30">
               <Gamepad2 className="w-12 h-12 text-neutral-600 mx-auto mb-4" />
@@ -396,7 +428,9 @@ export function Profile() {
           )}
         </div>
 
-        {/* TOURNAMENT DASHBOARD */}
+        {/* =========================================
+            SECTION 3: TOURNAMENT DASHBOARD 
+            ========================================= */}
         <div className="pt-6 border-t border-neutral-800">
           <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <h2 className="text-2xl font-bold flex items-center gap-2">
@@ -434,6 +468,7 @@ export function Profile() {
               className="grid grid-cols-1 md:grid-cols-3 gap-6"
             >
               
+              {/* Column 1: Upcoming / Scheduled */}
               <div className="bg-neutral-900/30 border border-neutral-800/50 p-5 rounded-2xl h-fit">
                 <h3 className="text-lg font-black flex items-center gap-2 mb-4 pb-2 border-b border-neutral-800/50">
                   <Calendar className="w-5 h-5 text-neutral-400" />
@@ -446,6 +481,7 @@ export function Profile() {
                 )}
               </div>
 
+              {/* Column 2: Ongoing */}
               <div className="bg-neutral-900/30 border border-neutral-800/50 p-5 rounded-2xl h-fit">
                 <h3 className="text-lg font-black flex items-center gap-2 mb-4 pb-2 border-b border-neutral-800/50">
                   <Play className="w-5 h-5 text-fuchsia-500" />
@@ -458,6 +494,7 @@ export function Profile() {
                 )}
               </div>
 
+              {/* Column 3: Completed */}
               <div className="bg-neutral-900/30 border border-neutral-800/50 p-5 rounded-2xl h-fit">
                 <h3 className="text-lg font-black flex items-center gap-2 mb-4 pb-2 border-b border-neutral-800/50">
                   <CheckCircle2 className="w-5 h-5 text-cyan-500" />

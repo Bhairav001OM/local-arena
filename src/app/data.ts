@@ -119,19 +119,35 @@ export const createTournament = async (formData: any, _token: string, userId: st
   return true;
 };
 
-export const joinTournament = async (tournamentId: string, userId: string, passwordInput?: string) => {
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).single();
-  if (profile?.is_banned === true) throw new Error("🚨 BANNED: Your account has been suspended.");
-  const isAlreadyIn = await checkIsParticipant(tournamentId, userId);
-  if (isAlreadyIn) throw new Error("You are already registered for this tournament!");
-  const { data: tourn } = await supabase.from("tournaments").select("password, is_private").eq("id", tournamentId).single();
-  if (tourn?.is_private) {
-    if (!passwordInput) throw new Error("Password is required for private tournaments!");
-    if (tourn.password !== passwordInput) throw new Error("❌ Incorrect password!");
+export const joinTournament = async (tournamentId: string, userId: string, password?: string) => {
+  const { data: tourn } = await supabase.from("tournaments").select("*").eq("id", tournamentId).single();
+  if (!tourn) throw new Error("Tournament not found.");
+  if (tourn.isPrivate && tourn.password !== password) throw new Error("Incorrect Password.");
+
+  // 🔥 NEW: TIME CONFLICT VALIDATION 🔥
+  const { data: myJoins } = await supabase.from("tournament_participants").select("tournament_id").eq("user_id", userId);
+  if (myJoins && myJoins.length > 0) {
+    const activeIds = myJoins.map(j => j.tournament_id);
+    const { data: activeTourns } = await supabase
+      .from("tournaments")
+      .select("id, date, time, status")
+      .in("id", activeIds)
+      .in("status", ["upcoming", "ongoing"]);
+      
+    if (activeTourns) {
+      const hasConflict = activeTourns.some(t => t.date === tourn.date && t.time === tourn.time);
+      if (hasConflict) {
+        throw new Error("⏳ Time Conflict: You are already registered for another tournament at this exact Date and Time!");
+      }
+    }
   }
+
+  // Proceed to join
   const { error } = await supabase.from("tournament_participants").insert([{ tournament_id: tournamentId, user_id: userId }]);
-  if (error) throw new Error(`Failed to join: ${error.message}`);
-  return true;
+  if (error) {
+    if (error.code === '23505') throw new Error("You are already in this tournament.");
+    throw error;
+  }
 };
 
 export const checkIsParticipant = async (tournamentId: string, userId: string) => {
@@ -406,4 +422,26 @@ export const getFriendshipStatus = async (user1: string, user2: string) => {
     return data.requester_id === user1 ? "request_sent" : "request_received";
   }
   return "none";
+};
+
+// 🔥 NEW: NO-SHOW PENALTY SYSTEM 🔥
+export const markPlayerNoShow = async (tournamentId: string, playerId: string) => {
+  // 1. Kick player from lobby
+  const { error: kickErr } = await supabase.from("tournament_participants").delete().match({ tournament_id: tournamentId, user_id: playerId });
+  if (kickErr) throw kickErr;
+
+  // 2. Add Penalty and check Ban condition
+  const { data: profile } = await supabase.from("profiles").select("penalties").eq("id", playerId).single();
+  const currentPenalties = profile?.penalties || 0;
+  const newPenalties = currentPenalties + 1;
+  const shouldBan = newPenalties >= 5;
+
+  // 3. Update DB
+  const { error: updateErr } = await supabase.from("profiles").update({ 
+    penalties: newPenalties, 
+    is_banned: shouldBan 
+  }).eq("id", playerId);
+  
+  if (updateErr) throw updateErr;
+  return { isBanned: shouldBan, penalties: newPenalties };
 };

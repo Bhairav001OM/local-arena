@@ -3,14 +3,14 @@ import { useParams, Link } from "react-router-dom";
 import { 
   Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, 
   Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, 
-  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin
+  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin, Flag
 } from "lucide-react";
-import { motion,  } from "framer-motion";
+import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase"; 
 import { 
   getTournamentById, fetchMessages, sendMessage, fetchTournamentRoster, 
-  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, type Tournament 
+  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, markPlayerNoShow, type Tournament 
 } from "../../app/data"; 
 
 export function TournamentDetails() {
@@ -176,6 +176,16 @@ export function TournamentDetails() {
     } catch (error: any) { alert(error.message); }
   };
 
+  // 🔥 NEW: Handle Penalty Logic
+  const handleNoShowPenalty = async (playerId: string, playerName: string) => {
+    if (!window.confirm(`Give ${playerName} a No-Show Penalty? They will be removed from the lobby. 5 penalties = Permanent Ban.`)) return;
+    try {
+      const result = await markPlayerNoShow(id!, playerId);
+      setRoster(prev => prev.filter(p => p.user_id !== playerId));
+      alert(`🚨 Penalty Added! ${playerName} now has ${result.penalties}/5 penalties. ${result.isBanned ? 'THEY ARE NOW BANNED.' : ''}`);
+    } catch (error: any) { alert(error.message); }
+  };
+
   if (isLoading) return <div className="min-h-screen bg-neutral-950 flex justify-center items-center"><Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin" /></div>;
   if (isBanned) return <div className="min-h-screen bg-neutral-950 flex justify-center p-6 text-center"><div className="bg-red-950/30 border-2 border-red-500 p-10 rounded-3xl max-w-md w-full"><Ban className="w-20 h-20 text-red-500 mx-auto mb-6" /><h2 className="text-3xl font-black text-red-500 mb-4">Access Denied</h2><Link to="/" className="py-4 px-6 bg-red-600 text-white font-black rounded-xl block">Return Home</Link></div></div>;
   if (!tournament) return <div className="min-h-screen bg-neutral-950 flex justify-center items-center text-white"><h2>Arena Not Found</h2></div>;
@@ -242,7 +252,7 @@ export function TournamentDetails() {
               </div>
             </div>
 
-            {/* 2. Verification UI (Full Restored) */}
+            {/* 2. Verification UI */}
             {(tournament.status === "verifying" || tournament.status === "completed" || tournament.status === "disputed") && tournament.result_image && (
               <div className="bg-yellow-950/20 border-2 border-yellow-500/50 rounded-2xl p-6">
                 <h3 className="text-lg font-black text-yellow-400 flex items-center gap-2 mb-4">
@@ -324,7 +334,7 @@ export function TournamentDetails() {
               </div>
             )}
 
-            {/* 4. Active Roster (Premium UI) */}
+            {/* 4. Active Roster (PREMIUM UI WITH NO-SHOW FLAG) */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col max-h-[400px]">
               <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-2">
                 <h3 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-cyan-400" /> Active Roster</h3>
@@ -348,17 +358,26 @@ export function TournamentDetails() {
                         </p>
                         <p className="text-xs text-cyan-500 font-mono truncate">ID: {player.in_game_id}</p>
                       </div>
+                      
                       {isHost && player.user_id !== currentId && tournament.status === "upcoming" && (
-                        <button
-                          onClick={(e) => { 
-                            e.preventDefault(); 
-                            handleKickPlayer(player.user_id, player.profiles?.display_name); 
-                          }}
-                          className="p-2 bg-red-900/30 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition-colors border border-red-500/20 z-10 relative shrink-0"
-                          title="Kick Player"
-                        >
-                          <UserMinus className="w-4 h-4" />
-                        </button>
+                        <div className="flex gap-1 z-10 relative shrink-0">
+                          {/* Normal Kick */}
+                          <button
+                            onClick={(e) => { e.preventDefault(); handleKickPlayer(player.user_id, player.profiles?.display_name); }}
+                            className="p-2 bg-neutral-800 text-neutral-400 rounded-lg hover:bg-neutral-700 hover:text-white transition-colors border border-neutral-700"
+                            title="Kick Player Normally"
+                          >
+                            <UserMinus className="w-4 h-4" />
+                          </button>
+                          {/* Penalty Flag */}
+                          <button
+                            onClick={(e) => { e.preventDefault(); handleNoShowPenalty(player.user_id, player.profiles?.display_name); }}
+                            className="p-2 bg-red-900/30 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition-colors border border-red-500/20"
+                            title="Mark as No-Show & Penalty"
+                          >
+                            <Flag className="w-4 h-4" />
+                          </button>
+                        </div>
                       )}
                     </Link>
                   ))
@@ -376,7 +395,7 @@ export function TournamentDetails() {
                 {tournament.isPrivate && showPasswordBox && (
                   <input type="password" placeholder="Password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="mb-4 p-3 bg-neutral-950 border border-neutral-700 rounded-xl text-center" />
                 )}
-                <button onClick={handleJoinTournament} disabled={isJoining} className="px-10 py-4 bg-cyan-600 text-white font-bold rounded-xl">{isJoining ? "Joining..." : "Join Now"}</button>
+                <button onClick={handleJoinTournament} disabled={isJoining} className="px-10 py-4 bg-cyan-600 text-white font-bold rounded-xl hover:scale-105 active:scale-95 transition-transform">{isJoining ? "Joining..." : "Join Now"}</button>
               </div>
             ) : (
               <div className="bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col h-[650px] overflow-hidden">
