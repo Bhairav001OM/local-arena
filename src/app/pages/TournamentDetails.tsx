@@ -2,14 +2,14 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { 
   Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, Megaphone, 
-  Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus
+  Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase"; 
 import { 
   getTournamentById, fetchMessages, sendMessage, fetchTournamentRoster, 
-  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, type Tournament 
+  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, type Tournament, GAMES 
 } from "../../app/data"; 
 
 export function TournamentDetails() {
@@ -55,7 +55,8 @@ export function TournamentDetails() {
       setMessages(msgs);
       const userIds = [...new Set(msgs.map((m: any) => m.user_id))];
       if (userIds.length > 0) {
-        const { data: linked } = await supabase.from("linked_games").select("user_id, in_game_id").eq("game_id", tourn.gameId).in("user_id", userIds);
+        const tournGameId = tourn.gameId || (tourn as any).game_id;
+        const { data: linked } = await supabase.from("linked_games").select("user_id, in_game_id").eq("game_id", tournGameId).in("user_id", userIds);
         const idMap: Record<string, string> = {};
         linked?.forEach((link: { user_id: string | number; in_game_id: string; }) => { idMap[link.user_id] = link.in_game_id; });
         setPlayerGameIds(idMap);
@@ -92,7 +93,8 @@ export function TournamentDetails() {
           await loadVotes();
         }
 
-        const rosterData = await fetchTournamentRoster(id, data.gameId);
+        const tournGameId = data.gameId || (data as any).game_id;
+        const rosterData = await fetchTournamentRoster(id, tournGameId);
         if (!isMounted) return;
         setRoster(rosterData);
 
@@ -194,7 +196,6 @@ export function TournamentDetails() {
     finally { setIsVoting(false); }
   };
 
-  // 🔥 NEW: HOST KICK ACTION 🔥
   const handleKickPlayer = async (playerId: string, playerName: string) => {
     if (!window.confirm(`Are you sure you want to kick ${playerName}? They will be removed from the lobby.`)) return;
     try {
@@ -214,7 +215,12 @@ export function TournamentDetails() {
   const myVote = votes.find(v => v.user_id === user?.id);
   const approvedCount = votes.filter(v => v.is_approved).length;
   const disputedCount = votes.filter(v => !v.is_approved).length;
+  
+  // 🔥 FIXES FOR SNAKE_CASE VS CAMELCASE 🔥
   const isPrivateArena = tournament.isPrivate || (tournament as any).is_private;
+  const displayPrize = tournament.prizePool || (tournament as any).prize_pool || "Bragging Rights";
+  const gameId = tournament.gameId || (tournament as any).game_id;
+  const gameName = GAMES.find(g => g.id === gameId)?.title || "Unknown Game";
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white pb-24">
@@ -339,17 +345,18 @@ export function TournamentDetails() {
               </div>
             )}
 
-            {/* 3. MATCH INTEL */}
+            {/* 3. MATCH INTEL (🔥 UPDATED WITH GAME NAME & PRIZE POOL) */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-4 border-b border-neutral-800 pb-2">Match Intel</h3>
               <div className="space-y-4 text-sm">
+                <div><p className="text-neutral-500 mb-1 flex items-center gap-1"><Gamepad2 className="w-3 h-3"/> Game</p><p className="font-bold text-cyan-400">{gameName}</p></div>
                 <div><p className="text-neutral-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3"/> Date & Time</p><p className="font-medium">{new Date(tournament.date).toLocaleDateString()} at {tournament.time || "TBD"}</p></div>
-                <div><p className="text-neutral-500 mb-1">Prize Pool</p><p className="font-medium text-fuchsia-400">{tournament.prizePool || "Bragging Rights"}</p></div>
+                <div><p className="text-neutral-500 mb-1">Prize Pool</p><p className="font-bold text-fuchsia-400">{displayPrize}</p></div>
                 <div><p className="text-neutral-500 mb-1">Location / Venue</p><p className="font-medium">{tournament.location}</p></div>
               </div>
             </div>
 
-            {/* 4. ACTIVE ROSTER BOX (WITH KICK BUTTON) */}
+            {/* 4. ACTIVE ROSTER BOX */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col max-h-[400px]">
               <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-2">
                 <h3 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-cyan-400" /> Active Roster</h3>
@@ -367,7 +374,6 @@ export function TournamentDetails() {
                         <p className="text-xs text-cyan-500 font-mono truncate">ID: {player.in_game_id}</p>
                       </div>
                       
-                      {/* 🔥 NEW: KICK BUTTON (Only visible to Host) 🔥 */}
                       {isHost && player.user_id !== user?.id && tournament.status === "upcoming" && (
                         <button
                           onClick={() => handleKickPlayer(player.user_id, player.profiles?.display_name)}

@@ -197,7 +197,8 @@ export function Tournaments() {
                 </div>
               ) : (
                 <form onSubmit={handleJoinSubmit} className="space-y-6">
-                  {selectedTournament.isPrivate && (
+                  {/* 🔥 FIX: Checks both isPrivate and is_private 🔥 */}
+                  {(selectedTournament.isPrivate || (selectedTournament as any).is_private) && (
                     <div>
                       <label className="block text-sm font-medium text-neutral-300 mb-2 flex items-center gap-2">
                         <Lock className="w-4 h-4 text-fuchsia-500" /> Entry Password Required
