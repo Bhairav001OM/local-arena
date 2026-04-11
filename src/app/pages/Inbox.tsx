@@ -12,7 +12,7 @@ import {
 import { 
   MessageSquare, Users, Bell, Send, ArrowLeft, Loader2, Copy, Check 
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, } from "framer-motion";
 import { Link } from "react-router-dom"; // 🔥 Fixed import
 
 export function Inbox() {

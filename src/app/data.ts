@@ -103,7 +103,7 @@ export const completeTournamentMatch = async (tournamentId: string, imageUrl: st
   return true;
 };
 
-export const createTournament = async (formData: any, token: string, userId: string) => {
+export const createTournament = async (formData: any, _token: string, userId: string) => {
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).single();
   if (profile?.is_banned === true) throw new Error("🚨 BANNED: Your account has been suspended.");
   const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();

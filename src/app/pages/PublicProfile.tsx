@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams,  useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { getUserProfile, fetchFullUserProfile, getFriendshipStatus, sendFriendRequest, acceptFriendRequest, type EnhancedUserProfile } from "../data"; 
+import { getUserProfile, fetchFullUserProfile, getFriendshipStatus, sendFriendRequest,  type EnhancedUserProfile } from "../data"; 
 import { Gamepad2, Loader2, Crown, Swords, ShieldAlert, UserPlus, Clock, MessageSquare, Check } from "lucide-react";
-import { motion } from "framer-motion";
+
 
 export function PublicProfile() {
   const { id } = useParams<{ id: string }>(); // URL se player ki ID aayegi

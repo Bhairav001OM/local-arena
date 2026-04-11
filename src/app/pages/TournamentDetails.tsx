@@ -3,9 +3,9 @@ import { useParams, Link } from "react-router-dom";
 import { 
   Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, 
   Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, 
-  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, ExternalLink, MapPin
+  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion,  } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase"; 
 import { 
@@ -102,6 +102,7 @@ export function TournamentDetails() {
     return () => { isMounted = false; };
   }, [id, user?.id, session?.user?.id]); 
 
+  // Real-time Chat
   useEffect(() => {
     if (!id || !tournament || isBanned) return;
     const channel = supabase.channel(`tourn-${id}`)
@@ -181,6 +182,8 @@ export function TournamentDetails() {
 
   const currentId = user?.id || session?.user?.id;
   const isHost = currentId === tournament.host_id;
+  
+  // Voting metrics for full UI
   const myVote = votes.find(v => v.user_id === currentId);
   const approvedCount = votes.filter(v => v.is_approved).length;
   const disputedCount = votes.filter(v => !v.is_approved).length;
@@ -200,7 +203,7 @@ export function TournamentDetails() {
                 {tournament.isPrivate && <Lock className="w-6 h-6 text-red-500" />}
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-lg font-mono text-sm font-bold">Code: {tournament.short_code}</span>
+                {tournament.short_code && <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-lg font-mono text-sm font-bold">Code: {tournament.short_code}</span>}
                 <span className={`px-4 py-1 rounded-full font-bold uppercase tracking-wider text-xs border ${
                   tournament.status === "completed" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50" : "bg-cyan-500/20 text-cyan-400 border-cyan-500/50"
                 }`}>{tournament.status}</span>
@@ -217,40 +220,85 @@ export function TournamentDetails() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* LEFT: Details & Roster */}
+          {/* ================= LEFT COLUMN ================= */}
           <div className="space-y-6">
             
-            {/* 1. Details Box (Wapas Add Kar Diya!) */}
+            {/* 1. Tournament Intel */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-4 border-b border-neutral-800 pb-2">Tournament Intel</h3>
               <div className="space-y-4">
                 <div className="flex items-start gap-3">
                   <Gamepad2 className="w-5 h-5 text-cyan-500 mt-1" />
-                  <div><p className="text-xs text-neutral-500 uppercase font-bold">Game</p><p className="font-bold">{tournament.gameName}</p></div>
+                  <div><p className="text-xs text-neutral-500 uppercase font-bold">Game</p><p className="font-bold text-cyan-400 uppercase">{tournament.gameName}</p></div>
                 </div>
                 <div className="flex items-start gap-3">
                   <Clock className="w-5 h-5 text-fuchsia-500 mt-1" />
-                  <div><p className="text-xs text-neutral-500 uppercase font-bold">Date & Time</p><p className="font-bold">{new Date(tournament.date).toLocaleDateString()} @ {tournament.time || "TBA"}</p></div>
+                  <div><p className="text-xs text-neutral-500 uppercase font-bold">Date & Time</p><p className="font-medium">{new Date(tournament.date).toLocaleDateString()} @ {tournament.time || "TBA"}</p></div>
                 </div>
                 <div className="flex items-start gap-3">
                   <MapPin className="w-5 h-5 text-emerald-500 mt-1" />
-                  <div><p className="text-xs text-neutral-500 uppercase font-bold">Location</p><p className="font-bold">{tournament.location}</p></div>
+                  <div><p className="text-xs text-neutral-500 uppercase font-bold">Location</p><p className="font-medium">{tournament.location}</p></div>
                 </div>
               </div>
             </div>
 
-            {/* 2. Verification / Voting */}
-            {(tournament.status === "verifying" || tournament.status === "completed") && tournament.result_image && (
-              <div className="bg-yellow-950/20 border border-yellow-500/30 rounded-2xl p-6">
-                <h3 className="text-yellow-400 font-bold mb-3 flex items-center gap-2"><Trophy className="w-4 h-4"/> Match Result</h3>
-                <a href={tournament.result_image} target="_blank" rel="noreferrer" className="block w-full h-32 bg-neutral-950 rounded-lg mb-3 overflow-hidden border border-neutral-800">
-                  <img src={tournament.result_image} className="w-full h-full object-cover opacity-70 hover:opacity-100 transition-opacity" alt="result" />
+            {/* 2. Verification UI (Full Restored) */}
+            {(tournament.status === "verifying" || tournament.status === "completed" || tournament.status === "disputed") && tournament.result_image && (
+              <div className="bg-yellow-950/20 border-2 border-yellow-500/50 rounded-2xl p-6">
+                <h3 className="text-lg font-black text-yellow-400 flex items-center gap-2 mb-4">
+                  {tournament.status === "completed" ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                  {tournament.status === "completed" ? "Final Match Results" : "Match Verification"}
+                </h3>
+                <a href={tournament.result_image} target="_blank" rel="noreferrer" className="block text-center py-3 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 rounded-lg font-bold border border-yellow-500/20 transition-colors mb-6">
+                  🔍 View Host's Screenshot
                 </a>
-                {!isHost && hasAccess && !myVote && (
-                  <div className="flex gap-2">
-                    <button onClick={() => handleVote(true)} className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold">Approve</button>
-                    <button onClick={() => handleVote(false)} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold">Dispute</button>
-                  </div>
+
+                {(tournament.status === "verifying" || tournament.status === "disputed") && (
+                  <>
+                    <div className="flex justify-between text-sm font-bold mb-4 border-b border-neutral-800 pb-4">
+                      <span className="text-emerald-400">{approvedCount} Approved</span>
+                      <span className="text-red-400">{disputedCount} Disputed</span>
+                    </div>
+
+                    {!isHost && hasAccess && (
+                      <div>
+                        {myVote ? (
+                          <div className={`p-3 rounded-lg text-center font-bold border ${myVote.is_approved ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                            You voted: {myVote.is_approved ? "Screenshot is Correct" : "Screenshot is Incorrect"}
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <p className="text-sm text-neutral-300 font-bold text-center mb-2">Is the Host's screenshot accurate?</p>
+                            <div className="flex gap-2">
+                              <button onClick={() => handleVote(true)} disabled={isVoting} className="flex-1 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"><ThumbsUp className="w-4 h-4" /> Yes</button>
+                              <button onClick={() => handleVote(false)} disabled={isVoting} className="flex-1 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/50 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"><ThumbsDown className="w-4 h-4" /> No</button>
+                            </div>
+
+                            {showDisputeInput && (
+                              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="pt-2">
+                                <textarea value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} placeholder="Explain what is wrong..." className="w-full bg-neutral-950 border border-red-500/30 rounded-lg p-3 text-sm focus:outline-none focus:border-red-500 mb-2" rows={2}/>
+                                <p className="text-xs text-red-400 font-bold mb-1">Upload Your Proof (Optional)</p>
+                                <div className="flex gap-2 mb-2 bg-red-950/50 p-1 rounded-lg border border-red-500/30">
+                                  <button onClick={() => setDisputeUploadType("file")} className={`flex-1 py-1 text-xs font-bold rounded-md flex items-center justify-center gap-2 ${disputeUploadType === "file" ? "bg-red-600 text-white" : "text-red-400"}`}><ImageIcon className="w-3 h-3"/> Device</button>
+                                  <button onClick={() => setDisputeUploadType("url")} className={`flex-1 py-1 text-xs font-bold rounded-md flex items-center justify-center gap-2 ${disputeUploadType === "url" ? "bg-red-600 text-white" : "text-red-400"}`}><LinkIcon className="w-3 h-3"/> URL</button>
+                                </div>
+
+                                {disputeUploadType === "file" ? (
+                                  <input type="file" accept="image/*" onChange={(e) => setDisputeFile(e.target.files?.[0] || null)} className="w-full mb-3 text-sm text-neutral-400 file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-600 file:text-white"/>
+                                ) : (
+                                  <input type="url" value={disputeUrl} onChange={(e) => setDisputeUrl(e.target.value)} placeholder="Proof Image URL" className="w-full bg-neutral-950 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-white mb-3"/>
+                                )}
+                                <button onClick={() => handleVote(false)} disabled={isVoting} className="w-full py-2 bg-red-600 text-white rounded-lg font-bold flex justify-center">
+                                  {isVoting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit Dispute & Proof"}
+                                </button>
+                              </motion.div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {isHost && <p className="text-sm text-yellow-500/80 text-center italic mt-2">Waiting for player consensus...</p>}
+                  </>
                 )}
               </div>
             )}
@@ -258,35 +306,68 @@ export function TournamentDetails() {
             {/* 3. Host Controls */}
             {isHost && (tournament.status === "upcoming" || tournament.status === "ongoing") && (
               <div className="bg-fuchsia-950/30 border-2 border-fuchsia-500/50 rounded-2xl p-6">
-                <h3 className="text-lg font-black text-fuchsia-400 mb-4">Host Panel</h3>
+                <h3 className="text-lg font-black text-fuchsia-400 flex items-center gap-2 mb-4"><Trophy className="w-5 h-5" /> Host Controls</h3>
+                <div className="flex gap-2 mb-4 bg-fuchsia-950/50 p-1 rounded-lg border border-fuchsia-500/30">
+                  <button onClick={() => setHostUploadType("file")} className={`flex-1 py-1.5 text-sm font-bold rounded-md flex items-center justify-center gap-2 ${hostUploadType === "file" ? "bg-fuchsia-600 text-white" : "text-fuchsia-400 hover:text-white"}`}><ImageIcon className="w-4 h-4"/> Device</button>
+                  <button onClick={() => setHostUploadType("url")} className={`flex-1 py-1.5 text-sm font-bold rounded-md flex items-center justify-center gap-2 ${hostUploadType === "url" ? "bg-fuchsia-600 text-white" : "text-fuchsia-400 hover:text-white"}`}><LinkIcon className="w-4 h-4"/> URL</button>
+                </div>
                 <form onSubmit={handleCompleteMatch} className="space-y-3">
-                   <input type="file" onChange={(e) => setHostFile(e.target.files?.[0] || null)} className="w-full text-xs" />
-                   <button type="submit" disabled={isCompleting} className="w-full py-3 bg-fuchsia-600 text-white font-bold rounded-lg">{isCompleting ? "Submitting..." : "Submit Match Proof"}</button>
+                  {hostUploadType === "file" ? (
+                    <input type="file" accept="image/*" required onChange={(e) => setHostFile(e.target.files?.[0] || null)} className="w-full bg-neutral-950 border border-fuchsia-500/30 rounded-lg px-4 py-2 text-sm text-white focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-fuchsia-600 file:text-white hover:file:bg-fuchsia-500"/>
+                  ) : (
+                    <input type="url" required value={screenshotUrl} onChange={(e) => setScreenshotUrl(e.target.value)} placeholder="https://imgur.com/screenshot" className="w-full bg-neutral-950 border border-fuchsia-500/30 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-fuchsia-500"/>
+                  )}
+                  <button type="submit" disabled={isCompleting || (hostUploadType === "file" && !hostFile)} className="w-full py-3 bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 disabled:opacity-50">
+                    {isCompleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><UploadCloud className="w-4 h-4" /> Submit Results</>}
+                  </button>
                 </form>
               </div>
             )}
 
-            {/* 4. Roster */}
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
-              <h3 className="text-lg font-bold flex items-center gap-2 mb-4 border-b border-neutral-800 pb-2"><Users className="w-5 h-5 text-cyan-400" /> Players ({roster.length})</h3>
-              <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                {roster.map((player: any) => (
-                  <Link key={player.user_id} to={`/player/${player.user_id}`} className="flex items-center justify-between p-2.5 bg-neutral-950 rounded-xl border border-neutral-800 hover:border-cyan-500/50 transition-all group">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <img src={player.profiles?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=fallback"} className="w-9 h-9 rounded-full object-cover" />
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-white group-hover:text-cyan-400 truncate">{player.profiles?.display_name}</p>
-                        <p className="text-[10px] text-neutral-500 font-mono truncate">IGN: {player.in_game_id}</p>
+            {/* 4. Active Roster (Premium UI) */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col max-h-[400px]">
+              <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-2">
+                <h3 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-cyan-400" /> Active Roster</h3>
+                <span className="bg-neutral-800 text-neutral-300 text-xs font-bold px-2 py-1 rounded-md">{roster.length} Players</span>
+              </div>
+              <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                {roster.length === 0 ? (
+                  <p className="text-sm text-neutral-500 italic text-center py-4">Lobby is currently empty.</p>
+                ) : (
+                  roster.map((player: any) => (
+                    <Link 
+                      key={player.user_id} 
+                      to={`/player/${player.user_id}`}
+                      className="flex items-center gap-3 bg-neutral-950 p-2.5 rounded-xl border border-neutral-800/50 transition-all hover:bg-neutral-900 hover:border-cyan-500/50 group block"
+                    >
+                      <img src={player.profiles?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=fallback"} alt="avatar" className="w-10 h-10 rounded-full border border-neutral-700 object-cover shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-white truncate group-hover:text-cyan-400 transition-colors">
+                          {player.profiles?.display_name} 
+                          {player.user_id === tournament.host_id && <span className="ml-2 text-[10px] bg-fuchsia-500/20 text-fuchsia-400 px-1.5 py-0.5 rounded uppercase tracking-wider">Host</span>}
+                        </p>
+                        <p className="text-xs text-cyan-500 font-mono truncate">ID: {player.in_game_id}</p>
                       </div>
-                    </div>
-                    {isHost && player.user_id !== currentId && <UserMinus onClick={(e) => { e.preventDefault(); handleKickPlayer(player.user_id, player.profiles?.display_name); }} className="w-4 h-4 text-red-900 hover:text-red-500" />}
-                  </Link>
-                ))}
+                      {isHost && player.user_id !== currentId && tournament.status === "upcoming" && (
+                        <button
+                          onClick={(e) => { 
+                            e.preventDefault(); 
+                            handleKickPlayer(player.user_id, player.profiles?.display_name); 
+                          }}
+                          className="p-2 bg-red-900/30 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition-colors border border-red-500/20 z-10 relative shrink-0"
+                          title="Kick Player"
+                        >
+                          <UserMinus className="w-4 h-4" />
+                        </button>
+                      )}
+                    </Link>
+                  ))
+                )}
               </div>
             </div>
           </div>
 
-          {/* RIGHT: Chat & Verification */}
+          {/* ================= RIGHT COLUMN (CHAT/LOBBY) ================= */}
           <div className="lg:col-span-2">
             {!hasAccess && !isHost ? (
               <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-12 text-center flex flex-col items-center justify-center min-h-[500px]">
