@@ -122,6 +122,43 @@ export function Layout() {
                     {link.label}
                   </NavLink>
                 ))}
+
+                {/* NEW: Profile and Auth section for Mobile */}
+                <div className="mt-4 pt-4 border-t border-neutral-800">
+                  {user ? (
+                    <>
+                      <Link
+                        to="/profile"
+                        onClick={closeMenu}
+                        className="flex items-center px-3 py-2 rounded-md text-base font-medium text-neutral-400 hover:bg-neutral-800 hover:text-white w-full"
+                      >
+                        <UserIcon className="w-5 h-5 mr-2" />
+                        Profile
+                      </Link>
+                      <button
+                        onClick={() => {
+                          signOut();
+                          closeMenu();
+                        }}
+                        className="flex items-center px-3 py-2 mt-1 rounded-md text-base font-medium text-red-400 hover:bg-neutral-800 hover:text-red-300 w-full text-left"
+                      >
+                        <LogOut className="w-5 h-5 mr-2" />
+                        Logout
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        signInWithGoogle();
+                        closeMenu();
+                      }}
+                      className="flex items-center justify-center px-3 py-2 mt-2 rounded-md text-base font-medium bg-white text-neutral-900 hover:bg-neutral-200 w-full"
+                    >
+                      <LogIn className="w-5 h-5 mr-2" />
+                      Login with Google
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
