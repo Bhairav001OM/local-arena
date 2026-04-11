@@ -157,6 +157,7 @@ export const createTournament = async (formData: any, token: string, userId: str
   return true;
 };
 
+// 🔥 UPDATED: Strict Password Check 
 export const joinTournament = async (tournamentId: string, userId: string, passwordInput?: string) => {
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).single();
   if (profile?.is_banned === true) throw new Error("🚨 BANNED: Your account has been suspended.");
@@ -164,10 +165,9 @@ export const joinTournament = async (tournamentId: string, userId: string, passw
   const isAlreadyIn = await checkIsParticipant(tournamentId, userId);
   if (isAlreadyIn) throw new Error("You are already registered for this tournament!");
 
-  // 🔥 THE FIX: Hum yahan 'is_private' fetch kar rahe hain (snake_case me)
+  // 🔥 Fetching is_private directly from DB
   const { data: tourn } = await supabase.from("tournaments").select("password, is_private").eq("id", tournamentId).single();
   
-  // 🔥 Ab check proper kaam karega!
   if (tourn?.is_private) {
     if (!passwordInput) throw new Error("Password is required for private tournaments!");
     if (tourn.password !== passwordInput) throw new Error("❌ Incorrect password!");
@@ -182,6 +182,13 @@ export const checkIsParticipant = async (tournamentId: string, userId: string) =
   const { data, error } = await supabase.from("tournament_participants").select("*").eq("tournament_id", tournamentId).eq("user_id", userId);
   if (error) return false;
   return data && data.length > 0;
+};
+
+// 🔥 NEW: HOST KICK PLAYER FUNCTION 🔥
+export const kickPlayer = async (tournamentId: string, playerId: string) => {
+  const { error } = await supabase.from("tournament_participants").delete().eq("tournament_id", tournamentId).eq("user_id", playerId);
+  if (error) throw new Error("Failed to kick player: " + error.message);
+  return true;
 };
 
 // --- ENHANCED PROFILE DATA LOGIC ---

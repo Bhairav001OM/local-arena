@@ -2,14 +2,14 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { 
   Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, Megaphone, 
-  Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon
+  Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase"; 
 import { 
   getTournamentById, fetchMessages, sendMessage, fetchTournamentRoster, 
-  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, type Tournament 
+  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, type Tournament 
 } from "../../app/data"; 
 
 export function TournamentDetails() {
@@ -21,16 +21,13 @@ export function TournamentDetails() {
   const [hasAccess, setHasAccess] = useState(false);
   const [isBanned, setIsBanned] = useState(false); 
 
-  // --- UI Toggles for Uploading ---
   const [hostUploadType, setHostUploadType] = useState<"url" | "file">("file");
   const [disputeUploadType, setDisputeUploadType] = useState<"url" | "file">("file");
 
-  // Host Action State
   const [screenshotUrl, setScreenshotUrl] = useState("");
   const [hostFile, setHostFile] = useState<File | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
 
-  // Voting State
   const [votes, setVotes] = useState<any[]>([]);
   const [isVoting, setIsVoting] = useState(false);
   const [showDisputeInput, setShowDisputeInput] = useState(false);
@@ -45,7 +42,6 @@ export function TournamentDetails() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [roster, setRoster] = useState<any[]>([]);
 
-  // 🔥 NEW: Join Tournament State 🔥
   const [passwordInput, setPasswordInput] = useState("");
   const [showPasswordBox, setShowPasswordBox] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
@@ -129,27 +125,22 @@ export function TournamentDetails() {
     try { await sendMessage(id, user.id, textToSend); } catch (error) { console.error("Failed to send", error); } finally { setIsSending(false); }
   };
 
-  // 🔥 PLAYER: JOIN TOURNAMENT WITH PASSWORD CHECK 🔥
   const handleJoinTournament = async () => {
     if (!user || !id || !tournament) return;
-    
-    // Check if private and password box isn't open yet
     const isPrivateArena = tournament.isPrivate || (tournament as any).is_private;
     if (isPrivateArena && !showPasswordBox) {
       setShowPasswordBox(true);
       return;
     }
-
     if (isPrivateArena && !passwordInput.trim()) {
       alert("Please enter the password!");
       return;
     }
-
     setIsJoining(true);
     try {
       await joinTournament(id, user.id, passwordInput);
       alert("✅ Successfully Joined!");
-      window.location.reload(); // Refresh to load lobby
+      window.location.reload(); 
     } catch (error: any) {
       alert(error.message || "Failed to join.");
     } finally {
@@ -157,11 +148,9 @@ export function TournamentDetails() {
     }
   };
 
-  // 🔥 HOST: COMPLETE MATCH WITH UPLOAD 🔥
   const handleCompleteMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id || !user) return;
-    
     setIsCompleting(true);
     try {
       let finalUrl = "";
@@ -172,7 +161,6 @@ export function TournamentDetails() {
       } else {
         throw new Error("Please provide an image file or a valid URL.");
       }
-
       await completeTournamentMatch(id, finalUrl);
       alert("Results Submitted! Waiting for player verification.");
       window.location.reload(); 
@@ -180,7 +168,6 @@ export function TournamentDetails() {
     finally { setIsCompleting(false); }
   };
 
-  // 🔥 PLAYER: VOTE & DISPUTE WITH UPLOAD 🔥
   const handleVote = async (isApproved: boolean) => {
     if (!isApproved && !showDisputeInput) {
       setShowDisputeInput(true); 
@@ -190,11 +177,9 @@ export function TournamentDetails() {
       alert("You must provide a reason for disputing the result.");
       return;
     }
-
     setIsVoting(true);
     try {
       let proofFinalUrl = undefined;
-      
       if (!isApproved) {
         if (disputeUploadType === "file" && disputeFile) {
           proofFinalUrl = await uploadScreenshot(disputeFile, user!.id);
@@ -202,12 +187,23 @@ export function TournamentDetails() {
           proofFinalUrl = disputeUrl.trim();
         }
       }
-
       await submitMatchVote(id!, user!.id, isApproved, isApproved ? undefined : disputeReason, proofFinalUrl);
       await loadVotes();
       setShowDisputeInput(false);
     } catch (err: any) { alert(err.message || "Failed to cast vote."); } 
     finally { setIsVoting(false); }
+  };
+
+  // 🔥 NEW: HOST KICK ACTION 🔥
+  const handleKickPlayer = async (playerId: string, playerName: string) => {
+    if (!window.confirm(`Are you sure you want to kick ${playerName}? They will be removed from the lobby.`)) return;
+    try {
+      await kickPlayer(id!, playerId);
+      setRoster(prev => prev.filter(p => p.user_id !== playerId));
+      alert(`✅ ${playerName} has been kicked from the tournament.`);
+    } catch (error: any) {
+      alert("Error kicking player: " + error.message);
+    }
   };
 
   if (isLoading) return <div className="min-h-screen bg-neutral-950 flex justify-center items-center"><Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin" /></div>;
@@ -232,7 +228,6 @@ export function TournamentDetails() {
               <h1 className="text-4xl md:text-5xl font-black">{tournament.title}</h1>
               {tournament.short_code && <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-lg font-mono font-bold">Code: {tournament.short_code}</span>}
               
-              {/* 🔥 NEW: Private Badge 🔥 */}
               {isPrivateArena && (
                 <span className="bg-red-900/30 text-red-400 border border-red-500/30 px-3 py-1 rounded-lg font-bold flex items-center gap-1 text-sm">
                   <Lock className="w-4 h-4" /> Private
@@ -354,7 +349,7 @@ export function TournamentDetails() {
               </div>
             </div>
 
-            {/* 4. ACTIVE ROSTER BOX */}
+            {/* 4. ACTIVE ROSTER BOX (WITH KICK BUTTON) */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col max-h-[400px]">
               <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-2">
                 <h3 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-cyan-400" /> Active Roster</h3>
@@ -365,12 +360,23 @@ export function TournamentDetails() {
                   <p className="text-sm text-neutral-500 italic text-center py-4">Lobby is currently empty.</p>
                 ) : (
                   roster.map((player) => (
-                    <div key={player.user_id} className="flex items-center gap-3 bg-neutral-950 p-2.5 rounded-xl border border-neutral-800/50">
+                    <div key={player.user_id} className="flex items-center gap-3 bg-neutral-950 p-2.5 rounded-xl border border-neutral-800/50 transition-all hover:bg-neutral-900">
                       <img src={player.profiles?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=fallback"} alt="avatar" className="w-10 h-10 rounded-full border border-neutral-700" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-white truncate">{player.profiles?.display_name} {player.user_id === tournament.host_id && <span className="ml-2 text-[10px] bg-fuchsia-500/20 text-fuchsia-400 px-1.5 py-0.5 rounded uppercase tracking-wider">Host</span>}</p>
                         <p className="text-xs text-cyan-500 font-mono truncate">ID: {player.in_game_id}</p>
                       </div>
+                      
+                      {/* 🔥 NEW: KICK BUTTON (Only visible to Host) 🔥 */}
+                      {isHost && player.user_id !== user?.id && tournament.status === "upcoming" && (
+                        <button
+                          onClick={() => handleKickPlayer(player.user_id, player.profiles?.display_name)}
+                          className="p-2 bg-red-900/30 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition-colors border border-red-500/20"
+                          title="Kick Player"
+                        >
+                          <UserMinus className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
@@ -382,7 +388,6 @@ export function TournamentDetails() {
           {/* ======================= RIGHT COLUMN (JOIN / CHAT) ======================= */}
           <div className="lg:col-span-2">
             {!hasAccess && !isHost ? (
-              /* 🔥 NEW: JOIN PANEL IF NOT REGISTERED 🔥 */
               <div className="bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col items-center justify-center h-[600px] p-6 text-center shadow-xl">
                 <Lock className="w-16 h-16 text-cyan-500 mb-6" />
                 <h2 className="text-3xl font-black mb-2">Join this Arena</h2>
@@ -409,7 +414,6 @@ export function TournamentDetails() {
                 </button>
               </div>
             ) : (
-              /* EXISTING LIVE CHAT UI */
               <div className="bg-neutral-900 border border-neutral-800 rounded-2xl flex flex-col h-[600px] overflow-hidden relative">
                 <div className="p-4 border-b border-neutral-800 bg-neutral-900/90 backdrop-blur z-10 flex items-center justify-between">
                   <div className="flex items-center gap-3"><MessageSquare className="w-5 h-5 text-cyan-400" /><h3 className="text-lg font-bold">Live Match Lobby</h3></div>
