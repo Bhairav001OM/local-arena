@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { 
-  Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, Megaphone, 
+  Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, 
   Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -9,7 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase"; 
 import { 
   getTournamentById, fetchMessages, sendMessage, fetchTournamentRoster, 
-  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, type Tournament, GAMES 
+  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, type Tournament 
 } from "../../app/data"; 
 
 export function TournamentDetails() {
@@ -55,8 +55,7 @@ export function TournamentDetails() {
       setMessages(msgs);
       const userIds = [...new Set(msgs.map((m: any) => m.user_id))];
       if (userIds.length > 0) {
-        const tournGameId = tourn.gameId || (tourn as any).game_id;
-        const { data: linked } = await supabase.from("linked_games").select("user_id, in_game_id").eq("game_id", tournGameId).in("user_id", userIds);
+        const { data: linked } = await supabase.from("linked_games").select("user_id, in_game_id").eq("game_id", tourn.gameId).in("user_id", userIds);
         const idMap: Record<string, string> = {};
         linked?.forEach((link: { user_id: string | number; in_game_id: string; }) => { idMap[link.user_id] = link.in_game_id; });
         setPlayerGameIds(idMap);
@@ -93,8 +92,7 @@ export function TournamentDetails() {
           await loadVotes();
         }
 
-        const tournGameId = data.gameId || (data as any).game_id;
-        const rosterData = await fetchTournamentRoster(id, tournGameId);
+        const rosterData = await fetchTournamentRoster(id, data.gameId);
         if (!isMounted) return;
         setRoster(rosterData);
 
@@ -129,12 +127,11 @@ export function TournamentDetails() {
 
   const handleJoinTournament = async () => {
     if (!user || !id || !tournament) return;
-    const isPrivateArena = tournament.isPrivate || (tournament as any).is_private;
-    if (isPrivateArena && !showPasswordBox) {
+    if (tournament.isPrivate && !showPasswordBox) {
       setShowPasswordBox(true);
       return;
     }
-    if (isPrivateArena && !passwordInput.trim()) {
+    if (tournament.isPrivate && !passwordInput.trim()) {
       alert("Please enter the password!");
       return;
     }
@@ -216,11 +213,8 @@ export function TournamentDetails() {
   const approvedCount = votes.filter(v => v.is_approved).length;
   const disputedCount = votes.filter(v => !v.is_approved).length;
   
-  // 🔥 FIXES FOR SNAKE_CASE VS CAMELCASE 🔥
-  const isPrivateArena = tournament.isPrivate || (tournament as any).is_private;
-  const displayPrize = tournament.prizePool || (tournament as any).prize_pool || "Bragging Rights";
-  const gameId = tournament.gameId || (tournament as any).game_id;
-  const gameName = GAMES.find(g => g.id === gameId)?.title || "Unknown Game";
+  const gameName = tournament.gameName || "Unknown Game"; // 🔥 Asali naam direct aayega
+  const displayPrize = tournament.prizePool || "Bragging Rights";
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white pb-24">
@@ -234,7 +228,7 @@ export function TournamentDetails() {
               <h1 className="text-4xl md:text-5xl font-black">{tournament.title}</h1>
               {tournament.short_code && <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-lg font-mono font-bold">Code: {tournament.short_code}</span>}
               
-              {isPrivateArena && (
+              {tournament.isPrivate && (
                 <span className="bg-red-900/30 text-red-400 border border-red-500/30 px-3 py-1 rounded-lg font-bold flex items-center gap-1 text-sm">
                   <Lock className="w-4 h-4" /> Private
                 </span>
@@ -345,11 +339,11 @@ export function TournamentDetails() {
               </div>
             )}
 
-            {/* 3. MATCH INTEL (🔥 UPDATED WITH GAME NAME & PRIZE POOL) */}
+            {/* 3. MATCH INTEL */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-4 border-b border-neutral-800 pb-2">Match Intel</h3>
               <div className="space-y-4 text-sm">
-                <div><p className="text-neutral-500 mb-1 flex items-center gap-1"><Gamepad2 className="w-3 h-3"/> Game</p><p className="font-bold text-cyan-400">{gameName}</p></div>
+                <div><p className="text-neutral-500 mb-1 flex items-center gap-1"><Gamepad2 className="w-3 h-3"/> Game</p><p className="font-bold text-cyan-400 uppercase">{gameName}</p></div>
                 <div><p className="text-neutral-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3"/> Date & Time</p><p className="font-medium">{new Date(tournament.date).toLocaleDateString()} at {tournament.time || "TBD"}</p></div>
                 <div><p className="text-neutral-500 mb-1">Prize Pool</p><p className="font-bold text-fuchsia-400">{displayPrize}</p></div>
                 <div><p className="text-neutral-500 mb-1">Location / Venue</p><p className="font-medium">{tournament.location}</p></div>
@@ -399,7 +393,7 @@ export function TournamentDetails() {
                 <h2 className="text-3xl font-black mb-2">Join this Arena</h2>
                 <p className="text-neutral-400 mb-8 max-w-md">You need to register to participate in this tournament and access the live match lobby.</p>
 
-                {isPrivateArena && showPasswordBox && (
+                {tournament.isPrivate && showPasswordBox && (
                   <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm mb-4">
                     <input
                       type="password"
@@ -416,7 +410,7 @@ export function TournamentDetails() {
                   disabled={isJoining}
                   className="px-10 py-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
                 >
-                  {isJoining ? <Loader2 className="w-5 h-5 animate-spin" /> : (isPrivateArena && showPasswordBox ? "Confirm Password" : "Join Tournament")}
+                  {isJoining ? <Loader2 className="w-5 h-5 animate-spin" /> : (tournament.isPrivate && showPasswordBox ? "Confirm Password" : "Join Tournament")}
                 </button>
               </div>
             ) : (
