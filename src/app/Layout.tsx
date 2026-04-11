@@ -1,5 +1,5 @@
 import { Outlet, NavLink, Link } from "react-router-dom";
-import { Gamepad2, Trophy, PlusCircle, Menu, X, LogIn, LogOut, User as UserIcon, MessageSquare } from "lucide-react";
+import { Gamepad2, Trophy, PlusCircle, Menu, X, LogIn, LogOut, User as UserIcon, Users } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "./context/AuthContext";
@@ -19,7 +19,7 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col selection:bg-fuchsia-500 selection:text-white">
-      {/* Navbar - Sticky ensures it stays on top while the whole page scrolls */}
+      {/* Navbar */}
       <nav className="sticky top-0 z-50 bg-neutral-900/80 backdrop-blur-md border-b border-neutral-800 h-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
           <div className="flex items-center justify-between h-full">
@@ -56,7 +56,7 @@ export function Layout() {
                   </NavLink>
                 ))}
 
-                {/* 🚨 SECRET ADMIN BUTTON (Desktop) */}
+                {/* 🚨 SECRET ADMIN BUTTON */}
                 {user?.email === "tumhara-email@gmail.com" && (
                   <Link 
                     to="/admin" 
@@ -70,10 +70,10 @@ export function Layout() {
               <div className="flex items-center space-x-4">
                 {user ? (
                   <>
-                    {/* 🔥 INBOX BUTTON (DESKTOP) 🔥 */}
+                    {/* 🔥 NEW: FRIENDS & CHAT BUTTON (DESKTOP) 🔥 */}
                     <Link to="/inbox" className="flex items-center text-cyan-400 hover:text-cyan-300 transition-colors bg-cyan-500/10 px-3 py-1.5 rounded-lg border border-cyan-500/20 mr-4">
-                      <MessageSquare className="w-5 h-5 mr-2" />
-                      <span className="text-sm font-bold">Inbox</span>
+                      <Users className="w-5 h-5 mr-2" />
+                      <span className="text-sm font-bold">Friends & Chat</span>
                     </Link>
 
                     <Link to="/profile" className="flex items-center text-neutral-400 hover:text-white transition-colors">
@@ -101,11 +101,7 @@ export function Layout() {
                 type="button"
                 className="inline-flex items-center justify-center p-2 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-fuchsia-500"
               >
-                {isMobileMenuOpen ? (
-                  <X className="block h-6 w-6" aria-hidden="true" />
-                ) : (
-                  <Menu className="block h-6 w-6" aria-hidden="true" />
-                )}
+                {isMobileMenuOpen ? <X className="block h-6 w-6" /> : <Menu className="block h-6 w-6" />}
               </button>
             </div>
           </div>
@@ -142,14 +138,14 @@ export function Layout() {
                 <div className="mt-4 pt-4 border-t border-neutral-800">
                   {user ? (
                     <>
-                      {/* 🔥 INBOX BUTTON (MOBILE) 🔥 */}
+                      {/* 🔥 NEW: FRIENDS & CHAT BUTTON (MOBILE) 🔥 */}
                       <Link
                         to="/inbox"
                         onClick={closeMenu}
                         className="flex items-center px-3 py-2 mb-2 rounded-md text-base font-bold bg-cyan-900/30 text-cyan-400 border border-cyan-500/20 w-full"
                       >
-                        <MessageSquare className="w-5 h-5 mr-2" />
-                        Inbox
+                        <Users className="w-5 h-5 mr-2" />
+                        Friends & Chat
                       </Link>
 
                       {user?.email === "tumhara-email@gmail.com" && (
@@ -195,7 +191,6 @@ export function Layout() {
         </AnimatePresence>
       </nav>
 
-      {/* 🔥 THE ULTIMATE FIX: Removed fixed height and internal overflow. Let the browser do the work! 🔥 */}
       <main className="flex-grow flex flex-col w-full relative">
         <Outlet />
       </main>
