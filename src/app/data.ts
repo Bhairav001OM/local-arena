@@ -156,6 +156,7 @@ export const createTournament = async (formData: any, token: string, userId: str
   
   return true;
 };
+
 export const joinTournament = async (tournamentId: string, userId: string, passwordInput?: string) => {
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).single();
   if (profile?.is_banned === true) throw new Error("🚨 BANNED: Your account has been suspended.");
@@ -163,9 +164,13 @@ export const joinTournament = async (tournamentId: string, userId: string, passw
   const isAlreadyIn = await checkIsParticipant(tournamentId, userId);
   if (isAlreadyIn) throw new Error("You are already registered for this tournament!");
 
-  if (passwordInput) {
-    const { data: tourn } = await supabase.from("tournaments").select("password, isPrivate").eq("id", tournamentId).single();
-    if (tourn?.isPrivate && tourn.password !== passwordInput) throw new Error("Incorrect password!");
+  // 🔥 THE FIX: Hum yahan 'is_private' fetch kar rahe hain (snake_case me)
+  const { data: tourn } = await supabase.from("tournaments").select("password, is_private").eq("id", tournamentId).single();
+  
+  // 🔥 Ab check proper kaam karega!
+  if (tourn?.is_private) {
+    if (!passwordInput) throw new Error("Password is required for private tournaments!");
+    if (tourn.password !== passwordInput) throw new Error("❌ Incorrect password!");
   }
 
   const { error } = await supabase.from("tournament_participants").insert([{ tournament_id: tournamentId, user_id: userId }]);
