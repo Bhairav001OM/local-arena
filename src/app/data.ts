@@ -390,3 +390,20 @@ export const fetchPrivateMessages = async (userId1: string, userId2: string) => 
   if (error) throw error;
   return data || [];
 };
+
+// 🔥 NEW: Check Friendship Status 🔥
+export const getFriendshipStatus = async (user1: string, user2: string) => {
+  if (!user1 || !user2) return "none";
+  const { data, error } = await supabase
+    .from("friendships")
+    .select("status, requester_id, receiver_id")
+    .or(`and(requester_id.eq.${user1},receiver_id.eq.${user2}),and(requester_id.eq.${user2},receiver_id.eq.${user1})`)
+    .maybeSingle();
+
+  if (error || !data) return "none";
+  if (data.status === "accepted") return "friends";
+  if (data.status === "pending") {
+    return data.requester_id === user1 ? "request_sent" : "request_received";
+  }
+  return "none";
+};

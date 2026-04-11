@@ -7,6 +7,7 @@ import { Profile } from "./app/pages/Profile"; // 1. Add this import
 import { TournamentDetails } from "./app/pages/TournamentDetails";
 import { Admin } from "./app/pages/Admin";
 import { Inbox } from "./app/pages/Inbox";
+import { PublicProfile } from "./app/pages/PublicProfile";
 // git check
   
 
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="inbox" element={<Inbox />} />
+          <Route path="player/:id" element={<PublicProfile />} />
         </Route>
       </Routes>
     </BrowserRouter>
