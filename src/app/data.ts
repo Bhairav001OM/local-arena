@@ -7,7 +7,7 @@ export interface Tournament {
   id: string;
   title: string;
   gameId: string;
-  gameName?: string; // 🔥 NEW: Asali Game ka naam yahan save hoga
+  gameName?: string; 
   status: TournamentStatus;
   prizePool: string;
   date: string;
@@ -27,7 +27,6 @@ export const GAMES = [
   { id: "sports", title: "Sports League", genre: "Racing & Sports", description: "Racing simulators and sports.", imageUrl: "https://images.unsplash.com/photo-1547394765-185e1e68f34e?auto=format&fit=crop&q=80&w=800" },
 ];
 
-// 🔥 THE HELPER: Database (snake_case) to Frontend (camelCase)
 const mapTournamentData = (t: any): Tournament => ({
   ...t,
   gameId: t.game_id || t.gameId,
@@ -38,16 +37,14 @@ const mapTournamentData = (t: any): Tournament => ({
   isDeleted: t.is_deleted
 });
 
-// 🔥 NEW: Database se Game ID ko asali Naam me convert karne wala jadugar
 const fetchGameTitleMap = async () => {
   const { data } = await supabase.from("games").select("id, title");
   const map: Record<string, string> = {};
-  GAMES.forEach(g => { map[g.id] = g.title; }); // Pehle purane games add karo
-  if (data) { data.forEach(g => { map[g.id] = g.title; }); } // Fir Database wale naye games add karo
+  GAMES.forEach(g => { map[g.id] = g.title; }); 
+  if (data) { data.forEach(g => { map[g.id] = g.title; }); } 
   return map;
 };
 
-// 🔥 THE AUTO-SHIFTER HELPER FUNCTION 🔥
 const applyAutoStatus = (tournaments: Tournament[]) => {
   const now = new Date();
   return tournaments.map(t => {
@@ -61,16 +58,15 @@ const applyAutoStatus = (tournaments: Tournament[]) => {
   });
 };
 
-// --- FETCH & CREATE TOURNAMENTS ---
 export const fetchTournaments = async (): Promise<Tournament[]> => {
   const { data, error } = await supabase.from("tournaments").select("*").order("created_at", { ascending: false });
   if (error) { console.error("Error fetching tournaments:", error); return []; }
   
-  const gameMap = await fetchGameTitleMap(); // 🔥 Fetch all game names
+  const gameMap = await fetchGameTitleMap(); 
   
   const mappedData = (data || []).map(t => {
     const mapped = mapTournamentData(t);
-    mapped.gameName = gameMap[mapped.gameId] || "Unknown Game"; // 🔥 Asali naam attach karo
+    mapped.gameName = gameMap[mapped.gameId] || "Unknown Game"; 
     return mapped;
   });
 
@@ -82,16 +78,15 @@ export const getTournamentById = async (id: string) => {
   const { data, error } = await supabase.from("tournaments").select("*").eq("id", id).single();
   if (error) throw new Error("Tournament not found");
   
-  const gameMap = await fetchGameTitleMap(); // 🔥 Fetch names
+  const gameMap = await fetchGameTitleMap(); 
   const mapped = mapTournamentData(data);
-  mapped.gameName = gameMap[mapped.gameId] || "Unknown Game"; // 🔥 Attach name
+  mapped.gameName = gameMap[mapped.gameId] || "Unknown Game"; 
 
   if ((mapped as any).is_deleted === true) throw new Error("🚫 This tournament has been terminated by the Admin.");
   
   return applyAutoStatus([mapped])[0]; 
 };
 
-// --- 📸 STORAGE: IMAGE UPLOAD ---
 export const uploadScreenshot = async (file: File, userId: string) => {
   const fileExt = file.name.split('.').pop();
   const fileName = `${userId}-${Math.random()}.${fileExt}`;
@@ -102,14 +97,12 @@ export const uploadScreenshot = async (file: File, userId: string) => {
   return data.publicUrl;
 };
 
-// --- 🚨 HOST ACTION: COMPLETE TOURNAMENT 🚨 ---
 export const completeTournamentMatch = async (tournamentId: string, imageUrl: string) => {
   const { error } = await supabase.from("tournaments").update({ status: "verifying", result_image: imageUrl }).eq("id", tournamentId);
   if (error) throw new Error("Failed to finalize tournament.");
   return true;
 };
 
-// --- CREATE & JOIN (WITH BAN CHECKS) ---
 export const createTournament = async (formData: any, token: string, userId: string) => {
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).single();
   if (profile?.is_banned === true) throw new Error("🚨 BANNED: Your account has been suspended.");
@@ -153,7 +146,6 @@ export const kickPlayer = async (tournamentId: string, playerId: string) => {
   return true;
 };
 
-// --- ENHANCED PROFILE DATA LOGIC ---
 export interface EnhancedUserProfile {
   stats: { tournamentsPlayed: number; tournamentsHosted: number; };
   playerTournaments: { upcoming: Tournament[]; ongoing: Tournament[]; completed: Tournament[]; };
@@ -161,7 +153,7 @@ export interface EnhancedUserProfile {
 }
 
 export const fetchFullUserProfile = async (userId: string): Promise<EnhancedUserProfile> => {
-  const gameMap = await fetchGameTitleMap(); // 🔥
+  const gameMap = await fetchGameTitleMap(); 
 
   const { data: hosted } = await supabase.from("tournaments").select("*").eq("host_id", userId).order("date", { ascending: false });
   const hostedTourns = (hosted || []).map(t => ({ ...mapTournamentData(t), gameName: gameMap[t.game_id] || "Unknown Game" }));
@@ -310,4 +302,91 @@ export const unlinkGame = async (userId: string, gameId: string) => {
   const { data, error } = await supabase.from('player_game_profiles').delete().eq('user_id', userId).eq('game_id', gameId);
   if (error) throw error;
   return data;
+};
+
+// ==========================================
+// --- 🤝 SOCIAL: FRIENDS & MESSAGING 🤝 ---
+// ==========================================
+
+export const searchPlayers = async (searchQuery: string) => {
+  if (!searchQuery.trim()) return [];
+  
+  // 🔥 THE MAGIC: Agar query UUID hai, toh usko as a 'Friend Code' treat karega
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(searchQuery.trim());
+  
+  let query = supabase.from("profiles").select("id, display_name, avatar_url");
+  
+  if (isUUID) {
+    query = query.eq("id", searchQuery.trim());
+  } else {
+    query = query.ilike("display_name", `%${searchQuery}%`);
+  }
+
+  const { data, error } = await query.limit(10);
+  if (error) throw error;
+  return data || [];
+};
+
+export const sendFriendRequest = async (senderId: string, receiverId: string) => {
+  const { error } = await supabase.from("friendships").insert([{
+    requester_id: senderId, receiver_id: receiverId, status: "pending"
+  }]);
+  if (error) throw new Error("Already sent or pending.");
+  return true;
+};
+
+// 🔥 NEW: Fetch Incoming Requests
+export const fetchPendingRequests = async (userId: string) => {
+  const { data, error } = await supabase
+    .from("friendships")
+    .select(`id, requester_id, requester:profiles!requester_id(id, display_name, avatar_url)`)
+    .eq("receiver_id", userId)
+    .eq("status", "pending");
+  if (error) throw error;
+  return data || [];
+};
+
+export const acceptFriendRequest = async (friendshipId: string) => {
+  const { error } = await supabase.from("friendships").update({ status: "accepted" }).eq("id", friendshipId);
+  if (error) throw error;
+  return true;
+};
+
+// 🔥 NEW: Reject/Delete Request
+export const rejectFriendRequest = async (friendshipId: string) => {
+  const { error } = await supabase.from("friendships").delete().eq("id", friendshipId);
+  if (error) throw error;
+  return true;
+};
+
+export const fetchFriends = async (userId: string) => {
+  const { data, error } = await supabase
+    .from("friendships")
+    .select(`
+      id, status, requester_id, receiver_id,
+      requester:profiles!requester_id(id, display_name, avatar_url),
+      receiver:profiles!receiver_id(id, display_name, avatar_url)
+    `)
+    .or(`requester_id.eq.${userId},receiver_id.eq.${userId}`)
+    .eq("status", "accepted"); // 🔥 FIX: Sirf accepted friends layega
+  if (error) throw error;
+  return data || [];
+};
+
+export const sendPrivateMessage = async (senderId: string, receiverId: string, content: string) => {
+  const { error } = await supabase.from("private_messages").insert([{
+    sender_id: senderId, receiver_id: receiverId, content: content
+  }]);
+  if (error) throw error;
+  return true;
+};
+
+export const fetchPrivateMessages = async (userId1: string, userId2: string) => {
+  const { data, error } = await supabase
+    .from("private_messages")
+    .select("*")
+    .or(`and(sender_id.eq.${userId1},receiver_id.eq.${userId2}),and(sender_id.eq.${userId2},receiver_id.eq.${userId1})`)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
 };

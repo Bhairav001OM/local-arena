@@ -1,14 +1,22 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion"; 
 import { Link } from "react-router-dom"; 
-import { ArrowRight, Trophy, Users, MonitorPlay, Zap } from "lucide-react";
-import { type Tournament, fetchTournaments } from "../data"; // Removed static GAMES import
+import { ArrowRight, Trophy, Users, MonitorPlay, Zap, Search, UserPlus, Loader2 } from "lucide-react";
+import { type Tournament, fetchTournaments, searchPlayers, sendFriendRequest } from "../data"; 
 import { TournamentCard } from "../components/TournamentCard";
-import { supabase } from "../../utils/supabase.ts"; // Make sure this path points to your supabase.ts file!
+import { supabase } from "../../utils/supabase"; 
+import { useAuth } from "../context/AuthContext"; // 🔥 Added for Friend Requests
 
 export function Home() {
+  const { session } = useAuth(); // Getting current user
   const [upcomingTournaments, setUpcomingTournaments] = useState<Tournament[]>([]);
-  const [platformGames, setPlatformGames] = useState<any[]>([]); // New state for your DB games
+  const [platformGames, setPlatformGames] = useState<any[]>([]); 
+
+  // 🔥 NEW: Player Search States 🔥
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [players, setPlayers] = useState<any[]>([]);
+  const [isSearchingPlayers, setIsSearchingPlayers] = useState(false);
+  const [actionMsg, setActionMsg] = useState("");
 
   useEffect(() => {
     // 1. Fetch static tournaments
@@ -22,7 +30,7 @@ export function Home() {
         const { data, error } = await supabase
           .from('games')
           .select('*')
-          .order('created_at', { ascending: false }); // Newest games show first
+          .order('created_at', { ascending: false }); 
 
         if (error) throw error;
         if (data) setPlatformGames(data);
@@ -34,8 +42,48 @@ export function Home() {
     fetchGames();
   }, []);
 
+  // 🔥 NEW: Auto-Search Players when typing 🔥
+  useEffect(() => {
+    const delayFn = setTimeout(async () => {
+      if (playerSearch.trim().length > 2) {
+        setIsSearchingPlayers(true);
+        try {
+          const results = await searchPlayers(playerSearch);
+          // Don't show the current logged-in user in search results
+          setPlayers(results.filter((p: any) => p.id !== session?.user?.id));
+        } catch(e) {
+          console.error(e);
+        } finally {
+          setIsSearchingPlayers(false);
+        }
+      } else {
+        setPlayers([]);
+      }
+    }, 500); // Wait 0.5s after typing to search
+
+    return () => clearTimeout(delayFn);
+  }, [playerSearch, session?.user?.id]);
+
+  // 🔥 NEW: Send Friend Request Handler 🔥
+  const handleSendRequest = async (receiverId: string) => {
+    if (!session?.user?.id) {
+      setActionMsg("❌ Login required to add friends");
+      setTimeout(() => setActionMsg(""), 3000);
+      return;
+    }
+    try {
+      await sendFriendRequest(session.user.id, receiverId);
+      setActionMsg("✅ Friend Request sent!");
+      setTimeout(() => setActionMsg(""), 3000);
+    } catch (err: any) {
+      setActionMsg("⚠️ " + (err.message || "Already sent"));
+      setTimeout(() => setActionMsg(""), 3000);
+    }
+  };
+
   return (
     <div className="w-full bg-neutral-950 flex flex-col items-center justify-center pt-16 sm:pt-24 pb-20 px-4 sm:px-6 lg:px-8">
+      
       {/* Hero Section */}
       <div className="relative isolate overflow-hidden bg-neutral-950 w-full max-w-7xl mx-auto rounded-3xl lg:flex lg:gap-x-20 lg:px-24 lg:pt-0">
         <svg
@@ -92,6 +140,85 @@ export function Home() {
         </div>
       </div>
 
+      {/* 🔥 NEW: PLAYER SEARCH & SOCIAL CONNECT SECTION 🔥 */}
+      <div className="w-full max-w-7xl mt-16 sm:mt-24 px-4 sm:px-6 lg:px-8">
+        <div className="bg-gradient-to-br from-neutral-900 to-neutral-950 border border-neutral-800 rounded-3xl p-6 md:p-10 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none"></div>
+
+          <div className="relative z-10 flex flex-col lg:flex-row gap-8 lg:gap-12 items-start lg:items-center">
+            
+            {/* Left Side: Title & Input */}
+            <div className="flex-1 w-full">
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
+                <Users className="w-7 h-7 sm:w-8 sm:h-8 text-cyan-400" />
+                Find Players & Connect
+              </h2>
+              <p className="text-neutral-400 mb-6 text-sm sm:text-base">Search for rivals, build your squad, and send friend requests to start private messaging.</p>
+
+              <div className="relative max-w-md w-full">
+                <Search className="absolute left-4 top-3.5 h-5 w-5 text-neutral-500" />
+                <input
+                  type="text"
+                  placeholder="Search player name..."
+                  value={playerSearch}
+                  onChange={(e) => setPlayerSearch(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-700 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                />
+              </div>
+              
+              {/* Alert Message Box */}
+              {actionMsg && (
+                <motion.p 
+                  initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
+                  className="mt-3 text-sm font-bold text-cyan-400 bg-cyan-500/10 inline-block px-3 py-1 rounded-md border border-cyan-500/20"
+                >
+                  {actionMsg}
+                </motion.p>
+              )}
+            </div>
+
+            {/* Right Side: Results Box */}
+            <div className="flex-1 w-full bg-neutral-950/80 border border-neutral-800 rounded-2xl p-4 min-h-[220px] max-h-[280px] overflow-y-auto custom-scrollbar shadow-inner">
+              {isSearchingPlayers ? (
+                <div className="flex justify-center items-center h-full min-h-[180px]">
+                  <Loader2 className="w-8 h-8 text-cyan-500 animate-spin" />
+                </div>
+              ) : players.length > 0 ? (
+                <div className="space-y-3">
+                  {players.map((p) => (
+                    <motion.div 
+                      initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+                      key={p.id} 
+                      className="flex items-center justify-between bg-neutral-900 p-3 rounded-xl border border-neutral-800 hover:border-neutral-700 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <img src={p.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=fallback"} alt="avatar" className="w-10 h-10 rounded-full border border-neutral-700 shrink-0" />
+                        <span className="font-bold text-white text-sm sm:text-base truncate">{p.display_name}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleSendRequest(p.id)} 
+                        title="Send Friend Request"
+                        className="bg-neutral-800 hover:bg-cyan-600 text-cyan-400 hover:text-white p-2.5 rounded-lg transition-colors border border-cyan-500/30 shrink-0"
+                      >
+                        <UserPlus className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </button>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : playerSearch.length > 2 ? (
+                <div className="flex justify-center items-center h-full min-h-[180px] text-neutral-500 text-sm font-medium">No players found matching "{playerSearch}"</div>
+              ) : (
+                <div className="flex flex-col justify-center items-center h-full min-h-[180px] text-neutral-600">
+                  <Search className="w-8 h-8 mb-2 opacity-20" />
+                  <span className="text-sm italic">Type at least 3 letters to search players...</span>
+                </div>
+              )}
+            </div>
+            
+          </div>
+        </div>
+      </div>
+
       {/* Feature Section */}
       <div className="mx-auto mt-24 max-w-7xl px-6 sm:mt-32 lg:px-8 border-t border-neutral-900 pt-16">
         <div className="mx-auto max-w-2xl lg:text-center">
@@ -145,7 +272,7 @@ export function Home() {
         </div>
       </div>
 
-      {/* Featured Games (NOW RENDERED FROM SUPABASE DATABASE) */}
+      {/* Featured Games */}
       <div className="w-full max-w-7xl mt-32 px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-end mb-10">
           <div>
@@ -169,7 +296,6 @@ export function Home() {
                 transition={{ delay: i * 0.1 }}
                 className="group relative h-80 rounded-2xl overflow-hidden cursor-pointer"
               >
-                {/* Changed to game.image_url to match Supabase */}
                 <img src={game.image_url} alt={game.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-80" />
                 <div className="absolute bottom-0 left-0 p-6 w-full">

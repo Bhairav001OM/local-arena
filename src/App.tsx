@@ -6,6 +6,7 @@ import { HostTournament } from "./app/pages/Host";
 import { Profile } from "./app/pages/Profile"; // 1. Add this import
 import { TournamentDetails } from "./app/pages/TournamentDetails";
 import { Admin } from "./app/pages/Admin";
+import { Inbox } from "./app/pages/Inbox";
 // git check
   
 
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="profile" element={<Profile />} /> {/* 2. Add this route */}
           <Route path="/tournaments/:id" element={<TournamentDetails />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="inbox" element={<Inbox />} />
         </Route>
       </Routes>
     </BrowserRouter>

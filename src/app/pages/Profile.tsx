@@ -4,13 +4,13 @@ import {
   getUserProfile, 
   saveLinkedGame, 
   fetchFullUserProfile, 
-  unlinkGame, // Make sure this is in your data.ts file!
+  unlinkGame, 
   type EnhancedUserProfile, 
   type Tournament 
 } from "../data"; 
 import { 
   ShieldAlert, Gamepad2, AlertCircle, CheckCircle2, Loader2, Save, Edit2, 
-  Swords, Crown, Calendar, Play, ExternalLink 
+  Swords, Crown, Calendar, Play, ExternalLink, Copy, Check 
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
@@ -41,6 +41,9 @@ export function Profile() {
   const [inGameName, setInGameName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // 🔥 NEW: Copy Friend Code State
+  const [copied, setCopied] = useState(false);
 
   const loadData = async () => {
     if (!user) {
@@ -110,6 +113,14 @@ export function Profile() {
     }
   };
 
+  // 🔥 NEW: Copy Function
+  const copyFriendCode = () => {
+    if (!user?.id) return;
+    navigator.clipboard.writeText(user.id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-neutral-950 flex justify-center items-center">
@@ -174,14 +185,29 @@ export function Profile() {
           <img 
             src={profile.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=fallback"} 
             alt="Avatar" 
-            className="w-24 h-24 rounded-full border-2 border-fuchsia-500 object-cover z-10"
+            className="w-24 h-24 rounded-full border-2 border-fuchsia-500 object-cover z-10 shrink-0"
           />
-          <div className="text-center md:text-left flex-1 z-10">
-            <h1 className="text-3xl font-black">{profile.display_name}</h1>
-            <p className="text-neutral-400 font-mono text-sm mt-1">{user.email}</p>
+          <div className="text-center md:text-left flex-1 z-10 w-full md:w-auto">
+            <h1 className="text-3xl font-black truncate">{profile.display_name}</h1>
+            <p className="text-neutral-400 font-mono text-sm mt-1 truncate">{user.email}</p>
+            
+            {/* 🔥 NEW: FRIEND CODE BOX 🔥 */}
+            <div className="mt-4 flex items-center justify-center md:justify-start gap-2">
+              <div className="bg-neutral-950 border border-neutral-800 px-3 py-2 rounded-lg flex items-center gap-3 shadow-inner max-w-full overflow-hidden">
+                <span className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider shrink-0">Friend Code</span>
+                <span className="text-sm text-cyan-400 font-mono font-bold truncate select-all">{user.id}</span>
+              </div>
+              <button 
+                onClick={copyFriendCode}
+                className="p-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors shrink-0 border border-neutral-700"
+                title="Copy Friend Code"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-neutral-400" />}
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-4 z-10">
+          <div className="flex flex-wrap justify-center gap-4 z-10 mt-4 md:mt-0">
             {/* Host Strike Tracker */}
             <div className={`px-4 py-3 rounded-xl border flex flex-col items-center justify-center ${
               profile.host_strikes >= 2 ? "bg-red-500/10 border-red-500" : 
@@ -234,7 +260,7 @@ export function Profile() {
             {!isAddingNewGame && platformGames.filter(g => !linkedGames.some(lg => lg.game_id === g.id)).length > 0 && (
               <button
                 onClick={() => setIsAddingNewGame(true)}
-                className="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 text-sm shadow-lg shadow-black/20"
+                className="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 text-sm shadow-lg shadow-black/20 shrink-0"
               >
                 + Add New Game
               </button>
@@ -294,7 +320,6 @@ export function Profile() {
                 if (!game) return null; 
                 
                 const isEditing = editingGame === game.id;
-                // Logic: If any stat is greater than 0, they have played.
                 const hasPlayedMatches = (linkedData.matches_played > 0) || (linkedData.wins > 0) || (linkedData.kills > 0);
 
                 return (
@@ -323,7 +348,7 @@ export function Profile() {
                           <p className="font-semibold text-white">{linkedData.in_game_name}</p>
                           <div className="h-px bg-neutral-800 my-3" />
                           <p className="text-xs text-neutral-500 mb-1 uppercase tracking-wider font-bold">Account ID</p>
-                          <p className="font-mono text-cyan-400">{linkedData.in_game_id}</p>
+                          <p className="font-mono text-cyan-400 break-all">{linkedData.in_game_id}</p>
                         </div>
 
                         {/* 🔥 The Stats Grid 🔥 */}
