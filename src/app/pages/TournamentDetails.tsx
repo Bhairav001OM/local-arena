@@ -102,13 +102,21 @@ export function TournamentDetails() {
     return () => { isMounted = false; };
   }, [id, user?.id, session?.user?.id]); 
 
-  // Real-time Chat
+  // Real-time logic
   useEffect(() => {
     if (!id || !tournament || isBanned) return;
+    
+    // Listen for chat
     const channel = supabase.channel(`tourn-${id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tournament_messages', filter: `tournament_id=eq.${id}` }, () => { 
         loadChatData(); 
-      }).subscribe();
+      })
+      // 🔥 Listen for AI or Vote updates to refresh the page automatically!
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${id}` }, (payload) => {
+        setTournament((prev) => ({ ...prev, ...payload.new } as any));
+      })
+      .subscribe();
+      
     return () => { supabase.removeChannel(channel); };
   }, [id, tournament, isBanned]);
 
@@ -145,9 +153,8 @@ export function TournamentDetails() {
       else if (hostUploadType === "url" && screenshotUrl.trim()) finalUrl = screenshotUrl.trim();
       else throw new Error("Provide proof image.");
       
-      // 🔥 FIX: Passed gameName to trigger AI
       await completeTournamentMatch(id, finalUrl, tournament.gameName);
-      alert("Results Submitted! AI is analyzing the screenshot. Please wait a few seconds and refresh.");
+      alert("Screenshot Uploaded! AI is scanning now...");
       window.location.reload(); 
     } catch (err: any) { alert(err.message); } 
     finally { setIsCompleting(false); }
@@ -165,8 +172,9 @@ export function TournamentDetails() {
         else if (disputeUploadType === "url") proofUrl = disputeUrl;
       }
       await submitMatchVote(id!, currentId, isApproved, isApproved ? undefined : disputeReason, proofUrl);
-      await loadVotes();
-      setShowDisputeInput(false);
+      
+      alert("Vote submitted!");
+      window.location.reload(); // Refresh to check if auto-complete hit
     } catch (err: any) { alert(err.message); } 
     finally { setIsVoting(false); }
   };
@@ -208,7 +216,7 @@ export function TournamentDetails() {
             <ChevronLeft className="w-4 h-4 mr-1" /> Back to Tournaments
           </Link>
 
-          {/* 🔥 ADMIN REVIEW BANNER 🔥 */}
+          {/* ADMIN REVIEW BANNER */}
           {tournament.status === "admin_review" && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-950/50 border border-red-500 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-lg shadow-red-500/10">
               <AlertOctagon className="w-10 h-10 text-red-500 animate-pulse shrink-0" />
@@ -278,7 +286,16 @@ export function TournamentDetails() {
                   🔍 View Host's Screenshot
                 </a>
 
-                {/* 🔥 AI MATCH REPORT (VISION AI) 🔥 */}
+                {/* 🔥 LIVE AI SCANNER UI 🔥 */}
+                {tournament.status === "verifying" && !tournament.ai_stats && (
+                   <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-6 text-center mb-6 shadow-[inset_0_0_20px_rgba(99,102,241,0.2)]">
+                     <BrainCircuit className="w-10 h-10 text-indigo-400 mx-auto mb-3 animate-pulse" />
+                     <h3 className="text-lg font-black text-indigo-400 animate-pulse">AI is Scanning Image...</h3>
+                     <p className="text-xs text-indigo-300 mt-2">Checking for photoshop, extracting kills, and verifying winner.</p>
+                   </div>
+                )}
+
+                {/* 🔥 AI MATCH REPORT 🔥 */}
                 {tournament.ai_stats && (
                   <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-5 mb-6 shadow-inner">
                     <div className="flex items-center justify-between mb-4 border-b border-indigo-500/30 pb-3">
@@ -316,7 +333,7 @@ export function TournamentDetails() {
                               {tournament.ai_stats.players.map((p: any, i: number) => (
                                 <tr key={i} className="hover:bg-neutral-900/50 transition-colors">
                                   <td className="px-3 py-2 font-medium text-white">{p.name}</td>
-                                  <td className="px-3 py-2 font-bold text-cyan-400 text-right">{p.score}</td>
+                                  <td className="px-3 py-2 font-bold text-cyan-400 text-right">{p.score || p.kills}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -371,7 +388,7 @@ export function TournamentDetails() {
                         )}
                       </div>
                     )}
-                    {isHost && <p className="text-sm text-yellow-500/80 text-center italic mt-2">Waiting for player consensus...</p>}
+                    {isHost && <p className="text-sm text-yellow-500/80 text-center italic mt-2">Waiting for players to approve...</p>}
                   </>
                 )}
               </div>

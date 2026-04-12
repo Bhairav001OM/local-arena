@@ -185,16 +185,14 @@ export const completeTournamentMatch = async (tournamentId: string, imageUrl: st
   return true;
 };
 
-// 🔥 NEW: AUTO STAT UPDATER 🔥
-// Jab match fully approve ho jayega tab ye chalega aur sabke stats badhayega
+// 🔥 AUTO STAT UPDATER 🔥
 export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   const { data: tourn } = await supabase.from("tournaments").select("game_id, ai_stats").eq("id", tournamentId).single();
-  if (!tourn || !tourn.ai_stats || !tourn.ai_stats.players) return;
+  if (!tourn) return;
 
   const gameId = tourn.game_id;
-  const aiStats = tourn.ai_stats;
+  const aiStats = tourn.ai_stats || {}; 
 
-  // Get all participants' linked game profiles for this game
   const { data: roster } = await supabase.from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
   if (!roster) return;
 
@@ -203,15 +201,15 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
 
   if (linkedGames) {
     for (const lg of linkedGames) {
-      // Find this player in AI stats by matching their exact in-game name
-      const aiPlayerData = aiStats.players.find((p: any) => p.name.toLowerCase() === lg.in_game_name.toLowerCase());
-      
       let newKills = lg.kills || 0;
       let newWins = lg.wins || 0;
-      let newMatches = (lg.matches_played || 0) + 1; // Always add 1 match played
+      let newMatches = (lg.matches_played || 0) + 1; 
 
-      if (aiPlayerData) {
-        newKills += (aiPlayerData.kills || 0);
+      if (aiStats.players) {
+        const aiPlayerData = aiStats.players.find((p: any) => p.name.toLowerCase() === lg.in_game_name.toLowerCase());
+        if (aiPlayerData && !isNaN(Number(aiPlayerData.kills))) {
+          newKills += Number(aiPlayerData.kills);
+        }
       }
 
       if (aiStats.winner && aiStats.winner.toLowerCase() === lg.in_game_name.toLowerCase()) {
@@ -248,12 +246,7 @@ export const joinTournament = async (tournamentId: string, userId: string, passw
   if (!tourn) throw new Error("Tournament not found.");
   if (tourn.isPrivate && tourn.password !== password) throw new Error("Incorrect Password.");
 
-  const { data: linkedGames } = await supabase
-    .from("linked_games")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("game_id", tourn.game_id || tourn.gameId);
-
+  const { data: linkedGames } = await supabase.from("linked_games").select("id").eq("user_id", userId).eq("game_id", tourn.game_id || tourn.gameId);
   if (!linkedGames || linkedGames.length === 0) {
     throw new Error("🚨 IDENTITY REQUIRED: You must link your In-Game ID for this game in your Profile before you can join the lobby!");
   }
@@ -262,16 +255,9 @@ export const joinTournament = async (tournamentId: string, userId: string, passw
   if (myJoins && myJoins.length > 0) {
     const activeIds = myJoins.map(j => j.tournament_id);
     const { data: activeTourns } = await supabase
-      .from("tournaments")
-      .select("id, date, time, status")
-      .in("id", activeIds)
-      .in("status", ["upcoming", "ongoing"]);
-      
-    if (activeTourns) {
-      const hasConflict = activeTourns.some(t => t.date === tourn.date && t.time === tourn.time);
-      if (hasConflict) {
-        throw new Error("⏳ Time Conflict: You are already registered for another tournament at this exact Date and Time!");
-      }
+      .from("tournaments").select("id, date, time, status").in("id", activeIds).in("status", ["upcoming", "ongoing"]);
+    if (activeTourns && activeTourns.some(t => t.date === tourn.date && t.time === tourn.time)) {
+      throw new Error("⏳ Time Conflict: You are already registered for another tournament at this exact Date and Time!");
     }
   }
 
@@ -334,27 +320,16 @@ export const getUserProfile = async (userId: string) => {
   return { profile, linkedGames };
 };
 
-// 🔥 UPDATE: Added preferredModes support 🔥
 export const saveLinkedGame = async (userId: string, gameId: string, inGameId: string, inGameName: string, preferredModes: string[] = []) => {
   const { data: existing } = await supabase.from("linked_games").select("id, edits_remaining").eq("user_id", userId).eq("game_id", gameId).single();
   if (existing) {
     if (existing.edits_remaining <= 0) throw new Error("Security Lock: You have 0 edits remaining for this game.");
     const { error } = await supabase.from("linked_games").update({ 
-      in_game_id: inGameId, 
-      in_game_name: inGameName, 
-      preferred_modes: preferredModes,
-      edits_remaining: existing.edits_remaining - 1, 
-      updated_at: new Date().toISOString() 
+      in_game_id: inGameId, in_game_name: inGameName, preferred_modes: preferredModes, edits_remaining: existing.edits_remaining - 1, updated_at: new Date().toISOString() 
     }).eq("id", existing.id);
     if (error) throw error;
   } else {
-    const { error } = await supabase.from("linked_games").insert([{ 
-      user_id: userId, 
-      game_id: gameId, 
-      in_game_id: inGameId, 
-      in_game_name: inGameName,
-      preferred_modes: preferredModes 
-    }]);
+    const { error } = await supabase.from("linked_games").insert([{ user_id: userId, game_id: gameId, in_game_id: inGameId, in_game_name: inGameName, preferred_modes: preferredModes }]);
     if (error) throw error;
   }
   return true;
@@ -390,6 +365,7 @@ export const fetchMatchVotes = async (tournamentId: string) => {
   return data || [];
 };
 
+// 🔥 CRITICAL FIX: Trigger match completion when players approve 🔥
 export const submitMatchVote = async (tournamentId: string, userId: string, isApproved: boolean, reason?: string, proofUrl?: string) => {
   const { data: existing } = await supabase.from("match_votes").select("id").eq("tournament_id", tournamentId).eq("user_id", userId).single();
   
@@ -401,8 +377,21 @@ export const submitMatchVote = async (tournamentId: string, userId: string, isAp
     if (error) throw error;
   }
 
-  if (!isApproved && proofUrl) {
-    await supabase.from("tournaments").update({ status: "admin_review" }).eq("id", tournamentId);
+  // Auto-Complete Check logic
+  const { data: participants } = await supabase.from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
+  const { data: votes } = await supabase.from("match_votes").select("is_approved").eq("tournament_id", tournamentId);
+
+  if (participants && votes) {
+    const requiredApprovals = Math.max(1, participants.length - 1); // Need everyone except host to approve
+    const approvals = votes.filter(v => v.is_approved).length;
+
+    if (!isApproved && proofUrl) {
+      await supabase.from("tournaments").update({ status: "admin_review" }).eq("id", tournamentId);
+    } else if (approvals >= requiredApprovals) {
+      // THE MATCH IS FINALLY OVER! Update stats!
+      await supabase.from("tournaments").update({ status: "completed" }).eq("id", tournamentId);
+      await applyMatchStatsToPlayers(tournamentId);
+    }
   }
 
   return true;
@@ -436,7 +425,6 @@ export const resolveDisputeAdmin = async (tournamentId: string, hostId: string, 
   if (hostWins) {
     const { error } = await supabase.from("tournaments").update({ status: "completed" }).eq("id", tournamentId);
     if (error) throw error;
-    // 🔥 STATS UPDATE IF ADMIN APPROVES HOST 🔥
     await applyMatchStatsToPlayers(tournamentId);
   } else {
     await supabase.from("tournaments").update({ is_deleted: true, status: "disputed" }).eq("id", tournamentId);
@@ -472,10 +460,6 @@ export const unlinkGame = async (userId: string, gameId: string) => {
   if (error) throw error;
   return data;
 };
-
-// ==========================================
-// --- 🤝 SOCIAL: FRIENDS & MESSAGING 🤝 ---
-// ==========================================
 
 export const searchPlayers = async (searchQuery: string) => {
   if (!searchQuery.trim()) return [];
