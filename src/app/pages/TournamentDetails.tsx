@@ -3,9 +3,9 @@ import { useParams, Link } from "react-router-dom";
 import { 
   Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, 
   Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, 
-  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin, Flag
+  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin, Flag, BrainCircuit, AlertOctagon, ShieldAlert
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase"; 
 import { 
@@ -82,7 +82,7 @@ export function TournamentDetails() {
         if (!isMounted) return;
         setTournament(data);
 
-        if (data.status === "verifying" || data.status === "disputed" || data.status === "completed") {
+        if (data.status === "verifying" || data.status === "disputed" || data.status === "completed" || data.status === "admin_review") {
           await loadVotes();
         }
 
@@ -137,14 +137,17 @@ export function TournamentDetails() {
   const handleCompleteMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     const currentId = user?.id || session?.user?.id;
-    if (!id || !currentId) return;
+    if (!id || !currentId || !tournament) return;
     setIsCompleting(true);
     try {
       let finalUrl = "";
       if (hostUploadType === "file" && hostFile) finalUrl = await uploadScreenshot(hostFile, currentId);
       else if (hostUploadType === "url" && screenshotUrl.trim()) finalUrl = screenshotUrl.trim();
       else throw new Error("Provide proof image.");
-      await completeTournamentMatch(id, finalUrl);
+      
+      // 🔥 FIX: Passed gameName to trigger AI
+      await completeTournamentMatch(id, finalUrl, tournament.gameName);
+      alert("Results Submitted! AI is analyzing the screenshot. Please wait a few seconds and refresh.");
       window.location.reload(); 
     } catch (err: any) { alert(err.message); } 
     finally { setIsCompleting(false); }
@@ -176,7 +179,6 @@ export function TournamentDetails() {
     } catch (error: any) { alert(error.message); }
   };
 
-  // 🔥 NEW: Handle Penalty Logic
   const handleNoShowPenalty = async (playerId: string, playerName: string) => {
     if (!window.confirm(`Give ${playerName} a No-Show Penalty? They will be removed from the lobby. 5 penalties = Permanent Ban.`)) return;
     try {
@@ -193,7 +195,6 @@ export function TournamentDetails() {
   const currentId = user?.id || session?.user?.id;
   const isHost = currentId === tournament.host_id;
   
-  // Voting metrics for full UI
   const myVote = votes.find(v => v.user_id === currentId);
   const approvedCount = votes.filter(v => v.is_approved).length;
   const disputedCount = votes.filter(v => !v.is_approved).length;
@@ -206,6 +207,18 @@ export function TournamentDetails() {
           <Link to="/tournaments" className="inline-flex items-center text-neutral-400 hover:text-white mb-6 font-medium">
             <ChevronLeft className="w-4 h-4 mr-1" /> Back to Tournaments
           </Link>
+
+          {/* 🔥 ADMIN REVIEW BANNER 🔥 */}
+          {tournament.status === "admin_review" && (
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-950/50 border border-red-500 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-lg shadow-red-500/10">
+              <AlertOctagon className="w-10 h-10 text-red-500 animate-pulse shrink-0" />
+              <div>
+                <h4 className="text-lg font-black text-red-500 uppercase tracking-widest">Under Admin Review</h4>
+                <p className="text-sm text-red-300 font-medium">The AI detected potential tampering or low confidence in the results. An Admin will review this match manually.</p>
+              </div>
+            </motion.div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-3 mb-2">
@@ -215,8 +228,10 @@ export function TournamentDetails() {
               <div className="flex flex-wrap gap-2">
                 {tournament.short_code && <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded-lg font-mono text-sm font-bold">Code: {tournament.short_code}</span>}
                 <span className={`px-4 py-1 rounded-full font-bold uppercase tracking-wider text-xs border ${
-                  tournament.status === "completed" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50" : "bg-cyan-500/20 text-cyan-400 border-cyan-500/50"
-                }`}>{tournament.status}</span>
+                  tournament.status === "completed" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50" : 
+                  tournament.status === "admin_review" ? "bg-red-500/20 text-red-400 border-red-500/50" :
+                  "bg-cyan-500/20 text-cyan-400 border-cyan-500/50"
+                }`}>{tournament.status.replace("_", " ")}</span>
               </div>
             </div>
             <div className="text-right">
@@ -252,8 +267,8 @@ export function TournamentDetails() {
               </div>
             </div>
 
-            {/* 2. Verification UI */}
-            {(tournament.status === "verifying" || tournament.status === "completed" || tournament.status === "disputed") && tournament.result_image && (
+            {/* 2. Verification & AI Report UI */}
+            {(tournament.status === "verifying" || tournament.status === "completed" || tournament.status === "disputed" || tournament.status === "admin_review") && tournament.result_image && (
               <div className="bg-yellow-950/20 border-2 border-yellow-500/50 rounded-2xl p-6">
                 <h3 className="text-lg font-black text-yellow-400 flex items-center gap-2 mb-4">
                   {tournament.status === "completed" ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
@@ -262,6 +277,55 @@ export function TournamentDetails() {
                 <a href={tournament.result_image} target="_blank" rel="noreferrer" className="block text-center py-3 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 rounded-lg font-bold border border-yellow-500/20 transition-colors mb-6">
                   🔍 View Host's Screenshot
                 </a>
+
+                {/* 🔥 AI MATCH REPORT (VISION AI) 🔥 */}
+                {tournament.ai_stats && (
+                  <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-5 mb-6 shadow-inner">
+                    <div className="flex items-center justify-between mb-4 border-b border-indigo-500/30 pb-3">
+                      <h3 className="text-base font-black text-indigo-400 flex items-center gap-2">
+                        <BrainCircuit className="w-5 h-5" /> AI Analysis
+                      </h3>
+                      <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${tournament.ai_confidence && tournament.ai_confidence > 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'}`}>
+                        {tournament.ai_confidence || 0}% Confident
+                      </span>
+                    </div>
+
+                    {tournament.ai_tampering_flag && (
+                      <div className="bg-red-500/10 border border-red-500 text-red-400 p-3 rounded-lg flex items-center gap-3 mb-4 text-xs font-bold">
+                        <ShieldAlert className="w-5 h-5 shrink-0" /> 
+                        AI detected potential image tampering/editing!
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      <div className="bg-neutral-950/80 rounded-xl p-3 border border-neutral-800">
+                        <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold mb-1">Detected Winner</p>
+                        <p className="text-lg font-black text-white">{tournament.ai_stats.winner || "Unknown"}</p>
+                      </div>
+
+                      {tournament.ai_stats.players && tournament.ai_stats.players.length > 0 && (
+                        <div className="bg-neutral-950/80 rounded-xl overflow-hidden border border-neutral-800">
+                          <table className="w-full text-left text-sm">
+                            <thead className="bg-neutral-900 text-neutral-400">
+                              <tr>
+                                <th className="px-3 py-2 font-bold uppercase text-[10px] tracking-wider">Player</th>
+                                <th className="px-3 py-2 font-bold uppercase text-[10px] tracking-wider text-right">Stats</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-neutral-800">
+                              {tournament.ai_stats.players.map((p: any, i: number) => (
+                                <tr key={i} className="hover:bg-neutral-900/50 transition-colors">
+                                  <td className="px-3 py-2 font-medium text-white">{p.name}</td>
+                                  <td className="px-3 py-2 font-bold text-cyan-400 text-right">{p.score}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {(tournament.status === "verifying" || tournament.status === "disputed") && (
                   <>
@@ -328,13 +392,13 @@ export function TournamentDetails() {
                     <input type="url" required value={screenshotUrl} onChange={(e) => setScreenshotUrl(e.target.value)} placeholder="https://imgur.com/screenshot" className="w-full bg-neutral-950 border border-fuchsia-500/30 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-fuchsia-500"/>
                   )}
                   <button type="submit" disabled={isCompleting || (hostUploadType === "file" && !hostFile)} className="w-full py-3 bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 disabled:opacity-50">
-                    {isCompleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><UploadCloud className="w-4 h-4" /> Submit Results</>}
+                    {isCompleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><UploadCloud className="w-4 h-4" /> Submit Results & Run AI</>}
                   </button>
                 </form>
               </div>
             )}
 
-            {/* 4. Active Roster (PREMIUM UI WITH NO-SHOW FLAG) */}
+            {/* 4. Active Roster */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col max-h-[400px]">
               <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-2">
                 <h3 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-cyan-400" /> Active Roster</h3>
@@ -361,22 +425,8 @@ export function TournamentDetails() {
                       
                       {isHost && player.user_id !== currentId && tournament.status === "upcoming" && (
                         <div className="flex gap-1 z-10 relative shrink-0">
-                          {/* Normal Kick */}
-                          <button
-                            onClick={(e) => { e.preventDefault(); handleKickPlayer(player.user_id, player.profiles?.display_name); }}
-                            className="p-2 bg-neutral-800 text-neutral-400 rounded-lg hover:bg-neutral-700 hover:text-white transition-colors border border-neutral-700"
-                            title="Kick Player Normally"
-                          >
-                            <UserMinus className="w-4 h-4" />
-                          </button>
-                          {/* Penalty Flag */}
-                          <button
-                            onClick={(e) => { e.preventDefault(); handleNoShowPenalty(player.user_id, player.profiles?.display_name); }}
-                            className="p-2 bg-red-900/30 text-red-500 rounded-lg hover:bg-red-600 hover:text-white transition-colors border border-red-500/20"
-                            title="Mark as No-Show & Penalty"
-                          >
-                            <Flag className="w-4 h-4" />
-                          </button>
+                          <button onClick={(e) => { e.preventDefault(); handleKickPlayer(player.user_id, player.profiles?.display_name); }} className="p-2 bg-neutral-800 text-neutral-400 rounded-lg hover:bg-neutral-700 hover:text-white border border-neutral-700"><UserMinus className="w-4 h-4" /></button>
+                          <button onClick={(e) => { e.preventDefault(); handleNoShowPenalty(player.user_id, player.profiles?.display_name); }} className="p-2 bg-red-900/30 text-red-500 rounded-lg hover:bg-red-600 hover:text-white border border-red-500/20"><Flag className="w-4 h-4" /></button>
                         </div>
                       )}
                     </Link>

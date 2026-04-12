@@ -1,7 +1,7 @@
 import { supabase } from "../utils/supabase";
 
 // --- INTERFACES ---
-export type TournamentStatus = "upcoming" | "ongoing" | "verifying" | "completed" | "disputed";
+export type TournamentStatus = "upcoming" | "ongoing" | "verifying" | "completed" | "disputed" | "admin_review";
 
 export interface Tournament {
   id: string;
@@ -19,6 +19,9 @@ export interface Tournament {
   short_code?: string;
   is_deleted?: boolean; 
   result_image?: string;
+  ai_stats?: any;
+  ai_tampering_flag?: boolean;
+  ai_confidence?: number;
 }
 
 export const GAMES = [
@@ -97,10 +100,131 @@ export const uploadScreenshot = async (file: File, userId: string) => {
   return data.publicUrl;
 };
 
-export const completeTournamentMatch = async (tournamentId: string, imageUrl: string) => {
+// ==========================================
+// 🔥 GEMINI VISION AI LOGIC 🔥
+// ==========================================
+const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
+  try {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+    if (!apiKey) throw new Error("API Key missing");
+
+    const imageResp = await fetch(imageUrl);
+    const blob = await imageResp.blob();
+    const reader = new FileReader();
+    
+    const base64Data = await new Promise<string>((resolve) => {
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        resolve(result.split(',')[1]); 
+      };
+      reader.readAsDataURL(blob);
+    });
+
+    const promptText = `
+      Analyze this match result screenshot for the game "${gameName}".
+      Return ONLY a JSON object with this exact structure (no markdown, no extra text):
+      {
+        "winner": "exact in-game player name of the winner",
+        "is_tampered": boolean (true if the image looks edited/photoshopped),
+        "confidence": number (0 to 100 on how sure you are),
+        "players": [{"name": "exact player name", "kills": number (convert score to number)}]
+      }
+    `;
+
+    const requestBody = {
+      contents: [{
+        parts: [
+          { text: promptText },
+          {
+            inline_data: {
+              mime_type: blob.type,
+              data: base64Data
+            }
+          }
+        ]
+      }],
+      generationConfig: {
+        responseMimeType: "application/json",
+      }
+    };
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) throw new Error("AI API failed");
+
+    const data = await response.json();
+    const rawJson = data.candidates[0].content.parts[0].text;
+    return JSON.parse(rawJson);
+
+  } catch (error) {
+    console.error("AI Analysis Failed:", error);
+    return null; 
+  }
+};
+
+export const completeTournamentMatch = async (tournamentId: string, imageUrl: string, gameName: string = "Unknown Game") => {
   const { error } = await supabase.from("tournaments").update({ status: "verifying", result_image: imageUrl }).eq("id", tournamentId);
   if (error) throw new Error("Failed to finalize tournament.");
+
+  analyzeMatchResultWithAI(imageUrl, gameName).then(async (aiData) => {
+    if (aiData) {
+      const needsReview = aiData.is_tampered || aiData.confidence < 70;
+      await supabase.from("tournaments").update({
+        ai_stats: aiData,
+        ai_tampering_flag: aiData.is_tampered,
+        ai_confidence: aiData.confidence,
+        ...(needsReview && { status: "admin_review" })
+      }).eq("id", tournamentId);
+    }
+  });
+
   return true;
+};
+
+// 🔥 NEW: AUTO STAT UPDATER 🔥
+// Jab match fully approve ho jayega tab ye chalega aur sabke stats badhayega
+export const applyMatchStatsToPlayers = async (tournamentId: string) => {
+  const { data: tourn } = await supabase.from("tournaments").select("game_id, ai_stats").eq("id", tournamentId).single();
+  if (!tourn || !tourn.ai_stats || !tourn.ai_stats.players) return;
+
+  const gameId = tourn.game_id;
+  const aiStats = tourn.ai_stats;
+
+  // Get all participants' linked game profiles for this game
+  const { data: roster } = await supabase.from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
+  if (!roster) return;
+
+  const userIds = roster.map(r => r.user_id);
+  const { data: linkedGames } = await supabase.from("linked_games").select("*").eq("game_id", gameId).in("user_id", userIds);
+
+  if (linkedGames) {
+    for (const lg of linkedGames) {
+      // Find this player in AI stats by matching their exact in-game name
+      const aiPlayerData = aiStats.players.find((p: any) => p.name.toLowerCase() === lg.in_game_name.toLowerCase());
+      
+      let newKills = lg.kills || 0;
+      let newWins = lg.wins || 0;
+      let newMatches = (lg.matches_played || 0) + 1; // Always add 1 match played
+
+      if (aiPlayerData) {
+        newKills += (aiPlayerData.kills || 0);
+      }
+
+      if (aiStats.winner && aiStats.winner.toLowerCase() === lg.in_game_name.toLowerCase()) {
+        newWins += 1;
+      }
+
+      await supabase.from("linked_games").update({
+        matches_played: newMatches,
+        kills: newKills,
+        wins: newWins
+      }).eq("id", lg.id);
+    }
+  }
 };
 
 export const createTournament = async (formData: any, _token: string, userId: string) => {
@@ -124,7 +248,16 @@ export const joinTournament = async (tournamentId: string, userId: string, passw
   if (!tourn) throw new Error("Tournament not found.");
   if (tourn.isPrivate && tourn.password !== password) throw new Error("Incorrect Password.");
 
-  // 🔥 NEW: TIME CONFLICT VALIDATION 🔥
+  const { data: linkedGames } = await supabase
+    .from("linked_games")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("game_id", tourn.game_id || tourn.gameId);
+
+  if (!linkedGames || linkedGames.length === 0) {
+    throw new Error("🚨 IDENTITY REQUIRED: You must link your In-Game ID for this game in your Profile before you can join the lobby!");
+  }
+
   const { data: myJoins } = await supabase.from("tournament_participants").select("tournament_id").eq("user_id", userId);
   if (myJoins && myJoins.length > 0) {
     const activeIds = myJoins.map(j => j.tournament_id);
@@ -142,7 +275,6 @@ export const joinTournament = async (tournamentId: string, userId: string, passw
     }
   }
 
-  // Proceed to join
   const { error } = await supabase.from("tournament_participants").insert([{ tournament_id: tournamentId, user_id: userId }]);
   if (error) {
     if (error.code === '23505') throw new Error("You are already in this tournament.");
@@ -202,14 +334,27 @@ export const getUserProfile = async (userId: string) => {
   return { profile, linkedGames };
 };
 
-export const saveLinkedGame = async (userId: string, gameId: string, inGameId: string, inGameName: string) => {
+// 🔥 UPDATE: Added preferredModes support 🔥
+export const saveLinkedGame = async (userId: string, gameId: string, inGameId: string, inGameName: string, preferredModes: string[] = []) => {
   const { data: existing } = await supabase.from("linked_games").select("id, edits_remaining").eq("user_id", userId).eq("game_id", gameId).single();
   if (existing) {
     if (existing.edits_remaining <= 0) throw new Error("Security Lock: You have 0 edits remaining for this game.");
-    const { error } = await supabase.from("linked_games").update({ in_game_id: inGameId, in_game_name: inGameName, edits_remaining: existing.edits_remaining - 1, updated_at: new Date().toISOString() }).eq("id", existing.id);
+    const { error } = await supabase.from("linked_games").update({ 
+      in_game_id: inGameId, 
+      in_game_name: inGameName, 
+      preferred_modes: preferredModes,
+      edits_remaining: existing.edits_remaining - 1, 
+      updated_at: new Date().toISOString() 
+    }).eq("id", existing.id);
     if (error) throw error;
   } else {
-    const { error } = await supabase.from("linked_games").insert([{ user_id: userId, game_id: gameId, in_game_id: inGameId, in_game_name: inGameName }]);
+    const { error } = await supabase.from("linked_games").insert([{ 
+      user_id: userId, 
+      game_id: gameId, 
+      in_game_id: inGameId, 
+      in_game_name: inGameName,
+      preferred_modes: preferredModes 
+    }]);
     if (error) throw error;
   }
   return true;
@@ -247,6 +392,7 @@ export const fetchMatchVotes = async (tournamentId: string) => {
 
 export const submitMatchVote = async (tournamentId: string, userId: string, isApproved: boolean, reason?: string, proofUrl?: string) => {
   const { data: existing } = await supabase.from("match_votes").select("id").eq("tournament_id", tournamentId).eq("user_id", userId).single();
+  
   if (existing) {
     const { error } = await supabase.from("match_votes").update({ is_approved: isApproved, dispute_reason: reason, proof_image: proofUrl }).eq("id", existing.id);
     if (error) throw error;
@@ -254,6 +400,11 @@ export const submitMatchVote = async (tournamentId: string, userId: string, isAp
     const { error } = await supabase.from("match_votes").insert([{ tournament_id: tournamentId, user_id: userId, is_approved: isApproved, dispute_reason: reason, proof_image: proofUrl }]);
     if (error) throw error;
   }
+
+  if (!isApproved && proofUrl) {
+    await supabase.from("tournaments").update({ status: "admin_review" }).eq("id", tournamentId);
+  }
+
   return true;
 };
 
@@ -285,6 +436,8 @@ export const resolveDisputeAdmin = async (tournamentId: string, hostId: string, 
   if (hostWins) {
     const { error } = await supabase.from("tournaments").update({ status: "completed" }).eq("id", tournamentId);
     if (error) throw error;
+    // 🔥 STATS UPDATE IF ADMIN APPROVES HOST 🔥
+    await applyMatchStatsToPlayers(tournamentId);
   } else {
     await supabase.from("tournaments").update({ is_deleted: true, status: "disputed" }).eq("id", tournamentId);
     const { data: hostProfile } = await supabase.from("profiles").select("host_strikes").eq("id", hostId).single();
@@ -326,38 +479,23 @@ export const unlinkGame = async (userId: string, gameId: string) => {
 
 export const searchPlayers = async (searchQuery: string) => {
   if (!searchQuery.trim()) return [];
-  
-  // 🔥 THE MAGIC: Agar query UUID hai, toh usko as a 'Friend Code' treat karega
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(searchQuery.trim());
-  
   let query = supabase.from("profiles").select("id, display_name, avatar_url");
-  
-  if (isUUID) {
-    query = query.eq("id", searchQuery.trim());
-  } else {
-    query = query.ilike("display_name", `%${searchQuery}%`);
-  }
-
+  if (isUUID) { query = query.eq("id", searchQuery.trim()); } 
+  else { query = query.ilike("display_name", `%${searchQuery}%`); }
   const { data, error } = await query.limit(10);
   if (error) throw error;
   return data || [];
 };
 
 export const sendFriendRequest = async (senderId: string, receiverId: string) => {
-  const { error } = await supabase.from("friendships").insert([{
-    requester_id: senderId, receiver_id: receiverId, status: "pending"
-  }]);
+  const { error } = await supabase.from("friendships").insert([{ requester_id: senderId, receiver_id: receiverId, status: "pending" }]);
   if (error) throw new Error("Already sent or pending.");
   return true;
 };
 
-// 🔥 NEW: Fetch Incoming Requests
 export const fetchPendingRequests = async (userId: string) => {
-  const { data, error } = await supabase
-    .from("friendships")
-    .select(`id, requester_id, requester:profiles!requester_id(id, display_name, avatar_url)`)
-    .eq("receiver_id", userId)
-    .eq("status", "pending");
+  const { data, error } = await supabase.from("friendships").select(`id, requester_id, requester:profiles!requester_id(id, display_name, avatar_url)`).eq("receiver_id", userId).eq("status", "pending");
   if (error) throw error;
   return data || [];
 };
@@ -368,7 +506,6 @@ export const acceptFriendRequest = async (friendshipId: string) => {
   return true;
 };
 
-// 🔥 NEW: Reject/Delete Request
 export const rejectFriendRequest = async (friendshipId: string) => {
   const { error } = await supabase.from("friendships").delete().eq("id", friendshipId);
   if (error) throw error;
@@ -376,72 +513,40 @@ export const rejectFriendRequest = async (friendshipId: string) => {
 };
 
 export const fetchFriends = async (userId: string) => {
-  const { data, error } = await supabase
-    .from("friendships")
-    .select(`
-      id, status, requester_id, receiver_id,
-      requester:profiles!requester_id(id, display_name, avatar_url),
-      receiver:profiles!receiver_id(id, display_name, avatar_url)
-    `)
-    .or(`requester_id.eq.${userId},receiver_id.eq.${userId}`)
-    .eq("status", "accepted"); // 🔥 FIX: Sirf accepted friends layega
+  const { data, error } = await supabase.from("friendships").select(`id, status, requester_id, receiver_id, requester:profiles!requester_id(id, display_name, avatar_url), receiver:profiles!receiver_id(id, display_name, avatar_url)`).or(`requester_id.eq.${userId},receiver_id.eq.${userId}`).eq("status", "accepted");
   if (error) throw error;
   return data || [];
 };
 
 export const sendPrivateMessage = async (senderId: string, receiverId: string, content: string) => {
-  const { error } = await supabase.from("private_messages").insert([{
-    sender_id: senderId, receiver_id: receiverId, content: content
-  }]);
+  const { error } = await supabase.from("private_messages").insert([{ sender_id: senderId, receiver_id: receiverId, content: content }]);
   if (error) throw error;
   return true;
 };
 
 export const fetchPrivateMessages = async (userId1: string, userId2: string) => {
-  const { data, error } = await supabase
-    .from("private_messages")
-    .select("*")
-    .or(`and(sender_id.eq.${userId1},receiver_id.eq.${userId2}),and(sender_id.eq.${userId2},receiver_id.eq.${userId1})`)
-    .order("created_at", { ascending: true });
+  const { data, error } = await supabase.from("private_messages").select("*").or(`and(sender_id.eq.${userId1},receiver_id.eq.${userId2}),and(sender_id.eq.${userId2},receiver_id.eq.${userId1})`).order("created_at", { ascending: true });
   if (error) throw error;
   return data || [];
 };
 
-// 🔥 NEW: Check Friendship Status 🔥
 export const getFriendshipStatus = async (user1: string, user2: string) => {
   if (!user1 || !user2) return "none";
-  const { data, error } = await supabase
-    .from("friendships")
-    .select("status, requester_id, receiver_id")
-    .or(`and(requester_id.eq.${user1},receiver_id.eq.${user2}),and(requester_id.eq.${user2},receiver_id.eq.${user1})`)
-    .maybeSingle();
-
+  const { data, error } = await supabase.from("friendships").select("status, requester_id, receiver_id").or(`and(requester_id.eq.${user1},receiver_id.eq.${user2}),and(requester_id.eq.${user2},receiver_id.eq.${user1})`).maybeSingle();
   if (error || !data) return "none";
   if (data.status === "accepted") return "friends";
-  if (data.status === "pending") {
-    return data.requester_id === user1 ? "request_sent" : "request_received";
-  }
+  if (data.status === "pending") return data.requester_id === user1 ? "request_sent" : "request_received";
   return "none";
 };
 
-// 🔥 NEW: NO-SHOW PENALTY SYSTEM 🔥
 export const markPlayerNoShow = async (tournamentId: string, playerId: string) => {
-  // 1. Kick player from lobby
   const { error: kickErr } = await supabase.from("tournament_participants").delete().match({ tournament_id: tournamentId, user_id: playerId });
   if (kickErr) throw kickErr;
-
-  // 2. Add Penalty and check Ban condition
   const { data: profile } = await supabase.from("profiles").select("penalties").eq("id", playerId).single();
   const currentPenalties = profile?.penalties || 0;
   const newPenalties = currentPenalties + 1;
   const shouldBan = newPenalties >= 5;
-
-  // 3. Update DB
-  const { error: updateErr } = await supabase.from("profiles").update({ 
-    penalties: newPenalties, 
-    is_banned: shouldBan 
-  }).eq("id", playerId);
-  
+  const { error: updateErr } = await supabase.from("profiles").update({ penalties: newPenalties, is_banned: shouldBan }).eq("id", playerId);
   if (updateErr) throw updateErr;
   return { isBanned: shouldBan, penalties: newPenalties };
 };

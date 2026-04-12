@@ -16,7 +16,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import { supabase } from "../../utils/supabase"; 
 
-// 🔥 FIX: No 'export' here to prevent Vite Fast Refresh crash
 const generateFriendCode = (uuid: string) => {
   if (!uuid) return "";
   return parseInt(uuid.split('-')[0], 16).toString().padStart(10, '0');
@@ -25,28 +24,26 @@ const generateFriendCode = (uuid: string) => {
 export function Profile() {
   const { user } = useAuth();
   
-  // Base Profile State
   const [profile, setProfile] = useState<any>(null);
   const [linkedGames, setLinkedGames] = useState<any[]>([]);
   const [platformGames, setPlatformGames] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // New Game UI State
   const [isAddingNewGame, setIsAddingNewGame] = useState(false);
   const [selectedGameToAdd, setSelectedGameToAdd] = useState("");
 
-  // Tournament Dashboard State
   const [enhancedData, setEnhancedData] = useState<EnhancedUserProfile | null>(null);
   const [activeTab, setActiveTab] = useState<"player" | "host">("player");
 
-  // Form State
   const [editingGame, setEditingGame] = useState<string | null>(null);
   const [inGameId, setInGameId] = useState("");
   const [inGameName, setInGameName] = useState("");
+  // 🔥 NEW: Store selected preferred modes
+  const [preferredModes, setPreferredModes] = useState<string[]>([]);
+  
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Copy Friend Code State
   const [copied, setCopied] = useState(false);
 
   const loadData = async () => {
@@ -82,12 +79,7 @@ export function Profile() {
 
   useEffect(() => {
     loadData();
-
-    // 🚨 NUCLEAR OPTION: Force the spinner off after 3 seconds
-    const safetyKillSwitch = setTimeout(() => {
-      setIsLoading(false);
-    }, 3000);
-
+    const safetyKillSwitch = setTimeout(() => { setIsLoading(false); }, 3000);
     return () => clearTimeout(safetyKillSwitch);
   }, [user]);
 
@@ -101,11 +93,13 @@ export function Profile() {
     setErrorMsg("");
     
     try {
-      await saveLinkedGame(user!.id, gameId, inGameId, inGameName);
-      await loadData(); // Reload to update UI
+      // 🔥 UPDATED: Pass preferredModes to save
+      await saveLinkedGame(user!.id, gameId, inGameId, inGameName, preferredModes);
+      await loadData(); 
       setEditingGame(null);
       setIsAddingNewGame(false);
       setSelectedGameToAdd("");
+      setPreferredModes([]);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to save game ID.");
     } finally {
@@ -120,12 +114,14 @@ export function Profile() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-neutral-950 flex justify-center items-center">
-        <Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin" />
-      </div>
+  const handleModeToggle = (mode: string) => {
+    setPreferredModes(prev => 
+      prev.includes(mode) ? prev.filter(m => m !== mode) : [...prev, mode]
     );
+  };
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-neutral-950 flex justify-center items-center"><Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin" /></div>;
   }
 
   if (!user || !profile || !enhancedData) {
@@ -137,7 +133,6 @@ export function Profile() {
     );
   }
 
-  // Mini-card for the dashboard columns
   const MiniTournamentCard = ({ tournament }: { tournament: Tournament }) => (
     <Link to={`/tournaments/${tournament.id}`} className="block mb-3">
       <div className="bg-neutral-900 border border-neutral-800 hover:border-cyan-500/50 transition-colors rounded-xl p-4 flex justify-between items-center group">
@@ -157,7 +152,6 @@ export function Profile() {
     <div className="min-h-screen bg-neutral-950 text-white py-12 px-4 sm:px-6 lg:px-8 pb-24">
       <div className="max-w-5xl mx-auto space-y-12">
         
-        {/* 🚨 BANNED WARNING BANNER 🚨 */}
         {profile?.is_banned && (
           <motion.div 
             initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
@@ -175,9 +169,6 @@ export function Profile() {
           </motion.div>
         )}
 
-        {/* =========================================
-            SECTION 1: MASTER PROFILE HEADER 
-            ========================================= */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-fuchsia-500/10 blur-[80px] rounded-full pointer-events-none" />
           
@@ -206,8 +197,6 @@ export function Profile() {
           </div>
 
           <div className="flex flex-wrap justify-center gap-3 z-10 mt-4 md:mt-0">
-            
-            {/* Penalty Tracker */}
             <div className={`px-4 py-3 rounded-xl border flex flex-col items-center justify-center ${
               (profile.penalties || 0) >= 3 ? "bg-red-900/30 border-red-500 text-red-500" : "bg-neutral-950 border-neutral-800 text-neutral-400"
             }`}>
@@ -216,7 +205,6 @@ export function Profile() {
               <span className="text-xl font-black">{(profile.penalties || 0)} / 5</span>
             </div>
 
-            {/* Host Strike Tracker */}
             <div className={`px-4 py-3 rounded-xl border flex flex-col items-center justify-center ${
               profile.host_strikes >= 2 ? "bg-red-500/10 border-red-500" : 
               profile.host_strikes === 1 ? "bg-yellow-500/10 border-yellow-500" : 
@@ -231,13 +219,11 @@ export function Profile() {
               <span className="text-xl font-black">{profile.host_strikes} / 2</span>
             </div>
 
-            {/* Dashboard Stats */}
             <div className="bg-neutral-950 border border-neutral-800 px-5 py-3 rounded-xl flex flex-col items-center justify-center">
               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Joined</span>
               <span className="text-2xl font-black text-emerald-400">{enhancedData.playerTournaments.upcoming.length}</span>
             </div>
             
-            {/* 🔥 UPDATED: Played is now Completed 🔥 */}
             <div className="bg-neutral-950 border border-neutral-800 px-5 py-3 rounded-xl flex flex-col items-center justify-center">
               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Completed</span>
               <span className="text-2xl font-black text-cyan-400">{enhancedData.playerTournaments.completed.length}</span>
@@ -257,9 +243,6 @@ export function Profile() {
           </div>
         )}
 
-        {/* =========================================
-            SECTION 2: ANTI-SMURF IDENTITY LOCK (LINKED GAMES)
-            ========================================= */}
         <div>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
             <div>
@@ -267,14 +250,16 @@ export function Profile() {
                 <Gamepad2 className="w-6 h-6 text-cyan-400" /> Linked Game Accounts
               </h2>
               <p className="text-neutral-400 text-sm mt-1">
-                Link your exact in-game ID. Games with tournament history cannot be removed.
+                Link your exact in-game ID and select your preferred modes.
               </p>
             </div>
             
-            {/* The Add Game Button (Only shows games not yet linked) */}
             {!isAddingNewGame && platformGames.filter(g => !linkedGames.some(lg => lg.game_id === g.id)).length > 0 && (
               <button
-                onClick={() => setIsAddingNewGame(true)}
+                onClick={() => {
+                  setIsAddingNewGame(true);
+                  setPreferredModes([]);
+                }}
                 className="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 text-sm shadow-lg shadow-black/20 shrink-0"
               >
                 + Add New Game
@@ -291,7 +276,10 @@ export function Profile() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <select 
                   value={selectedGameToAdd} 
-                  onChange={(e) => setSelectedGameToAdd(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedGameToAdd(e.target.value);
+                    setPreferredModes([]);
+                  }}
                   className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-4 py-3 text-sm text-white outline-none focus:border-cyan-500"
                 >
                   <option value="">Select a game...</option>
@@ -308,8 +296,32 @@ export function Profile() {
                   className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-4 py-3 text-sm text-white outline-none focus:border-cyan-500 font-mono"
                 />
               </div>
+
+              {/* 🔥 MODE SELECTOR FOR ADDING A NEW GAME 🔥 */}
+              {selectedGameToAdd && platformGames.find(g => g.id === selectedGameToAdd)?.official_modes?.length > 0 && (
+                <div className="mt-4 p-4 bg-neutral-950/50 rounded-xl border border-neutral-800">
+                  <p className="text-xs text-neutral-400 uppercase tracking-wider font-bold mb-3">Your Preferred Modes</p>
+                  <div className="flex flex-wrap gap-2">
+                    {platformGames.find(g => g.id === selectedGameToAdd)?.official_modes.map((mode: string) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => handleModeToggle(mode)}
+                        className={`px-4 py-2 text-xs font-bold rounded-lg border transition-all ${
+                          preferredModes.includes(mode) 
+                            ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/50 shadow-inner" 
+                            : "bg-neutral-900 border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:border-neutral-600"
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 mt-5">
-                <button onClick={() => { setIsAddingNewGame(false); setSelectedGameToAdd(""); setInGameId(""); setInGameName(""); }} className="px-6 py-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                <button onClick={() => { setIsAddingNewGame(false); setSelectedGameToAdd(""); setInGameId(""); setInGameName(""); setPreferredModes([]); }} className="px-6 py-2.5 bg-neutral-800 hover:bg-neutral-700 rounded-lg text-sm font-medium transition-colors">Cancel</button>
                 <button 
                   onClick={() => handleSaveGame(selectedGameToAdd)} 
                   disabled={isSaving || !selectedGameToAdd}
@@ -321,7 +333,6 @@ export function Profile() {
             </motion.div>
           )}
 
-          {/* LINKED GAMES GRID */}
           {linkedGames.length === 0 && !isAddingNewGame ? (
             <div className="text-center py-16 border border-neutral-800 border-dashed rounded-3xl bg-neutral-900/30">
               <Gamepad2 className="w-12 h-12 text-neutral-600 mx-auto mb-4" />
@@ -338,86 +349,129 @@ export function Profile() {
                 const hasPlayedMatches = (linkedData.matches_played > 0) || (linkedData.wins > 0) || (linkedData.kills > 0);
 
                 return (
-                  <motion.div layout key={game.id} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 relative shadow-lg">
+                  <motion.div layout key={game.id} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 relative shadow-lg flex flex-col justify-between">
                     <div className="absolute top-0 right-0 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-3 py-1.5 rounded-bl-xl rounded-tr-3xl flex items-center border-b border-l border-emerald-500/20">
                       <CheckCircle2 className="w-3 h-3 mr-1" /> LINKED
                     </div>
 
-                    <h3 className="font-bold text-xl mb-6 pr-16 text-white">{game.title}</h3>
+                    <div>
+                      <h3 className="font-bold text-xl mb-6 pr-16 text-white">{game.title}</h3>
 
-                    {isEditing ? (
-                      <div className="space-y-3 animate-fade-in">
-                        <input type="text" placeholder="In-Game Name" value={inGameName} onChange={(e) => setInGameName(e.target.value)} className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-3 text-sm text-white focus:border-cyan-500 outline-none" />
-                        <input type="text" placeholder="Exact Game ID" value={inGameId} onChange={(e) => setInGameId(e.target.value)} className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-3 text-sm text-white focus:border-cyan-500 outline-none font-mono" />
-                        <div className="flex gap-2 pt-2">
-                          <button onClick={() => setEditingGame(null)} className="flex-1 py-3 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-xl transition-colors font-medium">Cancel</button>
-                          <button onClick={() => handleSaveGame(game.id)} disabled={isSaving} className="flex-1 py-3 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl transition-colors font-bold flex justify-center items-center">
-                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4 mr-1"/> Save</>}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-5">
-                        <div className="bg-neutral-950 rounded-xl p-4 border border-neutral-800">
-                          <p className="text-xs text-neutral-500 mb-1 uppercase tracking-wider font-bold">In-Game Name</p>
-                          <p className="font-semibold text-white">{linkedData.in_game_name}</p>
-                          <div className="h-px bg-neutral-800 my-3" />
-                          <p className="text-xs text-neutral-500 mb-1 uppercase tracking-wider font-bold">Account ID</p>
-                          <p className="font-mono text-cyan-400 break-all">{linkedData.in_game_id}</p>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center">
-                            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Matches</p>
-                            <p className="text-xl font-black text-white">{linkedData.matches_played || 0}</p>
-                          </div>
-                          <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center shadow-[inset_0_0_20px_rgba(16,185,129,0.05)]">
-                            <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mb-1">Wins</p>
-                            <p className="text-xl font-black text-emerald-400">{linkedData.wins || 0}</p>
-                          </div>
-                          <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center shadow-[inset_0_0_20px_rgba(217,70,239,0.05)]">
-                            <p className="text-[10px] font-bold text-fuchsia-500 uppercase tracking-wider mb-1">Kills</p>
-                            <p className="text-xl font-black text-fuchsia-400">{linkedData.kills || 0}</p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between mt-2 border-t border-neutral-800 pt-4">
-                          <span className={`text-xs font-bold ${linkedData.edits_remaining === 0 ? "text-red-500" : "text-neutral-500"}`}>
-                            Edits Left: {linkedData.edits_remaining}/2
-                          </span>
+                      {isEditing ? (
+                        <div className="space-y-3 animate-fade-in">
+                          <input type="text" placeholder="In-Game Name" value={inGameName} onChange={(e) => setInGameName(e.target.value)} className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-3 text-sm text-white focus:border-cyan-500 outline-none" />
+                          <input type="text" placeholder="Exact Game ID" value={inGameId} onChange={(e) => setInGameId(e.target.value)} className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-3 text-sm text-white focus:border-cyan-500 outline-none font-mono" />
                           
-                          <div className="flex items-center gap-4">
-                            {!hasPlayedMatches && (
-                              <button 
-                                onClick={async () => {
-                                  if(window.confirm("Are you sure you want to remove this game?")) {
-                                    try {
-                                      await unlinkGame(user!.id, game.id);
-                                      loadData(); 
-                                    } catch (err) {
-                                      console.error("Failed to unlink game", err);
-                                    }
-                                  }
-                                }}
-                                className="text-xs font-bold text-red-500/70 hover:text-red-400 transition-colors"
-                              >
-                                Remove
-                              </button>
-                            )}
+                          {/* 🔥 MODE SELECTOR FOR EDITING EXISTING GAME 🔥 */}
+                          {game.official_modes && game.official_modes.length > 0 && (
+                            <div className="pt-2 pb-2">
+                              <p className="text-[10px] text-neutral-400 uppercase tracking-wider font-bold mb-2">Update Modes</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {game.official_modes.map((mode: string) => (
+                                  <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => handleModeToggle(mode)}
+                                    className={`px-2 py-1 text-[10px] font-bold rounded border transition-colors ${
+                                      preferredModes.includes(mode) 
+                                        ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/50" 
+                                        : "bg-neutral-900 border-neutral-700 text-neutral-500"
+                                    }`}
+                                  >
+                                    {mode}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
-                            {linkedData.edits_remaining > 0 && (
-                              <button 
-                                onClick={() => {
-                                  setInGameId(linkedData.in_game_id);
-                                  setInGameName(linkedData.in_game_name);
-                                  setEditingGame(game.id);
-                                }}
-                                className="text-xs font-bold flex items-center text-cyan-500 hover:text-cyan-400 transition-colors bg-cyan-500/10 px-3 py-1.5 rounded-lg border border-cyan-500/20"
-                              >
-                                <Edit2 className="w-3 h-3 mr-1.5" /> Edit Info
-                              </button>
-                            )}
+                          <div className="flex gap-2 pt-2 border-t border-neutral-800">
+                            <button onClick={() => { setEditingGame(null); setPreferredModes([]); }} className="flex-1 py-3 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-xl transition-colors font-medium">Cancel</button>
+                            <button onClick={() => handleSaveGame(game.id)} disabled={isSaving} className="flex-1 py-3 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl transition-colors font-bold flex justify-center items-center">
+                              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4 mr-1"/> Save</>}
+                            </button>
                           </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="bg-neutral-950 rounded-xl p-4 border border-neutral-800">
+                            <p className="text-xs text-neutral-500 mb-1 uppercase tracking-wider font-bold">In-Game Name</p>
+                            <p className="font-semibold text-white">{linkedData.in_game_name}</p>
+                            <div className="h-px bg-neutral-800 my-3" />
+                            <p className="text-xs text-neutral-500 mb-1 uppercase tracking-wider font-bold">Account ID</p>
+                            <p className="font-mono text-cyan-400 break-all">{linkedData.in_game_id}</p>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center">
+                              <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Matches</p>
+                              <p className="text-xl font-black text-white">{linkedData.matches_played || 0}</p>
+                            </div>
+                            <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center shadow-[inset_0_0_20px_rgba(16,185,129,0.05)]">
+                              <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mb-1">Wins</p>
+                              <p className="text-xl font-black text-emerald-400">{linkedData.wins || 0}</p>
+                            </div>
+                            <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center shadow-[inset_0_0_20px_rgba(217,70,239,0.05)]">
+                              <p className="text-[10px] font-bold text-fuchsia-500 uppercase tracking-wider mb-1">Kills</p>
+                              <p className="text-xl font-black text-fuchsia-400">{linkedData.kills || 0}</p>
+                            </div>
+                          </div>
+
+                          {/* 🔥 NEW: DISPLAY SELECTED MODES 🔥 */}
+                          {linkedData.preferred_modes && linkedData.preferred_modes.length > 0 && (
+                            <div className="pt-2">
+                              <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-2">Preferred Modes</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {linkedData.preferred_modes.map((mode: string) => (
+                                  <span key={mode} className="text-[10px] font-bold bg-neutral-800 text-neutral-300 px-2 py-1 rounded border border-neutral-700">
+                                    {mode}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {!isEditing && (
+                      <div className="flex items-center justify-between mt-5 border-t border-neutral-800 pt-4">
+                        <span className={`text-xs font-bold ${linkedData.edits_remaining === 0 ? "text-red-500" : "text-neutral-500"}`}>
+                          Edits Left: {linkedData.edits_remaining}/2
+                        </span>
+                        
+                        <div className="flex items-center gap-4">
+                          {!hasPlayedMatches && (
+                            <button 
+                              onClick={async () => {
+                                if(window.confirm("Are you sure you want to remove this game?")) {
+                                  try {
+                                    await unlinkGame(user!.id, game.id);
+                                    loadData(); 
+                                  } catch (err) {
+                                    console.error("Failed to unlink game", err);
+                                  }
+                                }
+                              }}
+                              className="text-xs font-bold text-red-500/70 hover:text-red-400 transition-colors"
+                            >
+                              Remove
+                            </button>
+                          )}
+
+                          {linkedData.edits_remaining > 0 && (
+                            <button 
+                              onClick={() => {
+                                setInGameId(linkedData.in_game_id);
+                                setInGameName(linkedData.in_game_name);
+                                setPreferredModes(linkedData.preferred_modes || []); // Pre-fill modes
+                                setEditingGame(game.id);
+                              }}
+                              className="text-xs font-bold flex items-center text-cyan-500 hover:text-cyan-400 transition-colors bg-cyan-500/10 px-3 py-1.5 rounded-lg border border-cyan-500/20"
+                            >
+                              <Edit2 className="w-3 h-3 mr-1.5" /> Edit Info
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -437,7 +491,6 @@ export function Profile() {
               <Crown className="w-6 h-6 text-fuchsia-400" /> Career Dashboard
             </h2>
             
-            {/* Tab Navigation */}
             <div className="flex gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800 w-full md:w-auto">
               <button
                 onClick={() => setActiveTab("player")}
@@ -468,7 +521,6 @@ export function Profile() {
               className="grid grid-cols-1 md:grid-cols-3 gap-6"
             >
               
-              {/* Column 1: Upcoming / Scheduled */}
               <div className="bg-neutral-900/30 border border-neutral-800/50 p-5 rounded-2xl h-fit">
                 <h3 className="text-lg font-black flex items-center gap-2 mb-4 pb-2 border-b border-neutral-800/50">
                   <Calendar className="w-5 h-5 text-neutral-400" />
@@ -481,7 +533,6 @@ export function Profile() {
                 )}
               </div>
 
-              {/* Column 2: Ongoing */}
               <div className="bg-neutral-900/30 border border-neutral-800/50 p-5 rounded-2xl h-fit">
                 <h3 className="text-lg font-black flex items-center gap-2 mb-4 pb-2 border-b border-neutral-800/50">
                   <Play className="w-5 h-5 text-fuchsia-500" />
@@ -494,7 +545,6 @@ export function Profile() {
                 )}
               </div>
 
-              {/* Column 3: Completed */}
               <div className="bg-neutral-900/30 border border-neutral-800/50 p-5 rounded-2xl h-fit">
                 <h3 className="text-lg font-black flex items-center gap-2 mb-4 pb-2 border-b border-neutral-800/50">
                   <CheckCircle2 className="w-5 h-5 text-cyan-500" />
