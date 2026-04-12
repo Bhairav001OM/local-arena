@@ -106,12 +106,10 @@ export function TournamentDetails() {
   useEffect(() => {
     if (!id || !tournament || isBanned) return;
     
-    // Listen for chat
     const channel = supabase.channel(`tourn-${id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tournament_messages', filter: `tournament_id=eq.${id}` }, () => { 
         loadChatData(); 
       })
-      // 🔥 Listen for AI or Vote updates to refresh the page automatically!
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${id}` }, (payload) => {
         setTournament((prev) => ({ ...prev, ...payload.new } as any));
       })
@@ -174,7 +172,7 @@ export function TournamentDetails() {
       await submitMatchVote(id!, currentId, isApproved, isApproved ? undefined : disputeReason, proofUrl);
       
       alert("Vote submitted!");
-      window.location.reload(); // Refresh to check if auto-complete hit
+      window.location.reload(); 
     } catch (err: any) { alert(err.message); } 
     finally { setIsVoting(false); }
   };
@@ -216,7 +214,6 @@ export function TournamentDetails() {
             <ChevronLeft className="w-4 h-4 mr-1" /> Back to Tournaments
           </Link>
 
-          {/* ADMIN REVIEW BANNER */}
           {tournament.status === "admin_review" && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-950/50 border border-red-500 p-4 rounded-2xl mb-6 flex items-center gap-4 shadow-lg shadow-red-500/10">
               <AlertOctagon className="w-10 h-10 text-red-500 animate-pulse shrink-0" />
@@ -253,10 +250,8 @@ export function TournamentDetails() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* ================= LEFT COLUMN ================= */}
           <div className="space-y-6">
             
-            {/* 1. Tournament Intel */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-4 border-b border-neutral-800 pb-2">Tournament Intel</h3>
               <div className="space-y-4">
@@ -275,7 +270,6 @@ export function TournamentDetails() {
               </div>
             </div>
 
-            {/* 2. Verification & AI Report UI */}
             {(tournament.status === "verifying" || tournament.status === "completed" || tournament.status === "disputed" || tournament.status === "admin_review") && tournament.result_image && (
               <div className="bg-yellow-950/20 border-2 border-yellow-500/50 rounded-2xl p-6">
                 <h3 className="text-lg font-black text-yellow-400 flex items-center gap-2 mb-4">
@@ -286,109 +280,111 @@ export function TournamentDetails() {
                   🔍 View Host's Screenshot
                 </a>
 
-                {/* 🔥 LIVE AI SCANNER UI 🔥 */}
-                {tournament.status === "verifying" && !tournament.ai_stats && (
+                {/* 🔥 SAFE VOTE UI: Hidden until AI finishes! 🔥 */}
+                {tournament.status === "verifying" && !tournament.ai_stats ? (
                    <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-6 text-center mb-6 shadow-[inset_0_0_20px_rgba(99,102,241,0.2)]">
                      <BrainCircuit className="w-10 h-10 text-indigo-400 mx-auto mb-3 animate-pulse" />
                      <h3 className="text-lg font-black text-indigo-400 animate-pulse">AI is Scanning Image...</h3>
-                     <p className="text-xs text-indigo-300 mt-2">Checking for photoshop, extracting kills, and verifying winner.</p>
+                     <p className="text-xs text-indigo-300 mt-2">Please wait. Voting will open once AI finishes verification.</p>
                    </div>
-                )}
+                ) : (
+                  <>
+                    {/* 🔥 AI MATCH REPORT 🔥 */}
+                    {tournament.ai_stats && (
+                      <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-5 mb-6 shadow-inner">
+                        <div className="flex items-center justify-between mb-4 border-b border-indigo-500/30 pb-3">
+                          <h3 className="text-base font-black text-indigo-400 flex items-center gap-2">
+                            <BrainCircuit className="w-5 h-5" /> AI Analysis
+                          </h3>
+                          <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${tournament.ai_confidence && tournament.ai_confidence > 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'}`}>
+                            {tournament.ai_confidence || 0}% Confident
+                          </span>
+                        </div>
 
-                {/* 🔥 AI MATCH REPORT 🔥 */}
-                {tournament.ai_stats && (
-                  <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-5 mb-6 shadow-inner">
-                    <div className="flex items-center justify-between mb-4 border-b border-indigo-500/30 pb-3">
-                      <h3 className="text-base font-black text-indigo-400 flex items-center gap-2">
-                        <BrainCircuit className="w-5 h-5" /> AI Analysis
-                      </h3>
-                      <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${tournament.ai_confidence && tournament.ai_confidence > 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'}`}>
-                        {tournament.ai_confidence || 0}% Confident
-                      </span>
-                    </div>
+                        {tournament.ai_tampering_flag && (
+                          <div className="bg-red-500/10 border border-red-500 text-red-400 p-3 rounded-lg flex items-center gap-3 mb-4 text-xs font-bold">
+                            <ShieldAlert className="w-5 h-5 shrink-0" /> 
+                            AI detected potential image tampering/editing!
+                          </div>
+                        )}
 
-                    {tournament.ai_tampering_flag && (
-                      <div className="bg-red-500/10 border border-red-500 text-red-400 p-3 rounded-lg flex items-center gap-3 mb-4 text-xs font-bold">
-                        <ShieldAlert className="w-5 h-5 shrink-0" /> 
-                        AI detected potential image tampering/editing!
+                        <div className="space-y-4">
+                          <div className="bg-neutral-950/80 rounded-xl p-3 border border-neutral-800">
+                            <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold mb-1">Detected Winner</p>
+                            <p className="text-lg font-black text-white">{tournament.ai_stats.winner || "Unknown"}</p>
+                          </div>
+
+                          {tournament.ai_stats.players && tournament.ai_stats.players.length > 0 && (
+                            <div className="bg-neutral-950/80 rounded-xl overflow-hidden border border-neutral-800">
+                              <table className="w-full text-left text-sm">
+                                <thead className="bg-neutral-900 text-neutral-400">
+                                  <tr>
+                                    <th className="px-3 py-2 font-bold uppercase text-[10px] tracking-wider">Player</th>
+                                    <th className="px-3 py-2 font-bold uppercase text-[10px] tracking-wider text-right">Stats</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-neutral-800">
+                                  {tournament.ai_stats.players.map((p: any, i: number) => (
+                                    <tr key={i} className="hover:bg-neutral-900/50 transition-colors">
+                                      <td className="px-3 py-2 font-medium text-white">{p.name}</td>
+                                      <td className="px-3 py-2 font-bold text-cyan-400 text-right">{p.score || p.kills}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
-                    <div className="space-y-4">
-                      <div className="bg-neutral-950/80 rounded-xl p-3 border border-neutral-800">
-                        <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold mb-1">Detected Winner</p>
-                        <p className="text-lg font-black text-white">{tournament.ai_stats.winner || "Unknown"}</p>
-                      </div>
-
-                      {tournament.ai_stats.players && tournament.ai_stats.players.length > 0 && (
-                        <div className="bg-neutral-950/80 rounded-xl overflow-hidden border border-neutral-800">
-                          <table className="w-full text-left text-sm">
-                            <thead className="bg-neutral-900 text-neutral-400">
-                              <tr>
-                                <th className="px-3 py-2 font-bold uppercase text-[10px] tracking-wider">Player</th>
-                                <th className="px-3 py-2 font-bold uppercase text-[10px] tracking-wider text-right">Stats</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-neutral-800">
-                              {tournament.ai_stats.players.map((p: any, i: number) => (
-                                <tr key={i} className="hover:bg-neutral-900/50 transition-colors">
-                                  <td className="px-3 py-2 font-medium text-white">{p.name}</td>
-                                  <td className="px-3 py-2 font-bold text-cyan-400 text-right">{p.score || p.kills}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    {(tournament.status === "verifying" || tournament.status === "disputed") && (
+                      <>
+                        <div className="flex justify-between text-sm font-bold mb-4 border-b border-neutral-800 pb-4">
+                          <span className="text-emerald-400">{approvedCount} Approved</span>
+                          <span className="text-red-400">{disputedCount} Disputed</span>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                )}
 
-                {(tournament.status === "verifying" || tournament.status === "disputed") && (
-                  <>
-                    <div className="flex justify-between text-sm font-bold mb-4 border-b border-neutral-800 pb-4">
-                      <span className="text-emerald-400">{approvedCount} Approved</span>
-                      <span className="text-red-400">{disputedCount} Disputed</span>
-                    </div>
-
-                    {!isHost && hasAccess && (
-                      <div>
-                        {myVote ? (
-                          <div className={`p-3 rounded-lg text-center font-bold border ${myVote.is_approved ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
-                            You voted: {myVote.is_approved ? "Screenshot is Correct" : "Screenshot is Incorrect"}
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <p className="text-sm text-neutral-300 font-bold text-center mb-2">Is the Host's screenshot accurate?</p>
-                            <div className="flex gap-2">
-                              <button onClick={() => handleVote(true)} disabled={isVoting} className="flex-1 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"><ThumbsUp className="w-4 h-4" /> Yes</button>
-                              <button onClick={() => handleVote(false)} disabled={isVoting} className="flex-1 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/50 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"><ThumbsDown className="w-4 h-4" /> No</button>
-                            </div>
-
-                            {showDisputeInput && (
-                              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="pt-2">
-                                <textarea value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} placeholder="Explain what is wrong..." className="w-full bg-neutral-950 border border-red-500/30 rounded-lg p-3 text-sm focus:outline-none focus:border-red-500 mb-2" rows={2}/>
-                                <p className="text-xs text-red-400 font-bold mb-1">Upload Your Proof (Optional)</p>
-                                <div className="flex gap-2 mb-2 bg-red-950/50 p-1 rounded-lg border border-red-500/30">
-                                  <button onClick={() => setDisputeUploadType("file")} className={`flex-1 py-1 text-xs font-bold rounded-md flex items-center justify-center gap-2 ${disputeUploadType === "file" ? "bg-red-600 text-white" : "text-red-400"}`}><ImageIcon className="w-3 h-3"/> Device</button>
-                                  <button onClick={() => setDisputeUploadType("url")} className={`flex-1 py-1 text-xs font-bold rounded-md flex items-center justify-center gap-2 ${disputeUploadType === "url" ? "bg-red-600 text-white" : "text-red-400"}`}><LinkIcon className="w-3 h-3"/> URL</button>
+                        {!isHost && hasAccess && (
+                          <div>
+                            {myVote ? (
+                              <div className={`p-3 rounded-lg text-center font-bold border ${myVote.is_approved ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                                You voted: {myVote.is_approved ? "Screenshot is Correct" : "Screenshot is Incorrect"}
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                <p className="text-sm text-neutral-300 font-bold text-center mb-2">Is the Host's screenshot accurate?</p>
+                                <div className="flex gap-2">
+                                  <button onClick={() => handleVote(true)} disabled={isVoting} className="flex-1 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/50 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"><ThumbsUp className="w-4 h-4" /> Yes</button>
+                                  <button onClick={() => handleVote(false)} disabled={isVoting} className="flex-1 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/50 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"><ThumbsDown className="w-4 h-4" /> No</button>
                                 </div>
 
-                                {disputeUploadType === "file" ? (
-                                  <input type="file" accept="image/*" onChange={(e) => setDisputeFile(e.target.files?.[0] || null)} className="w-full mb-3 text-sm text-neutral-400 file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-600 file:text-white"/>
-                                ) : (
-                                  <input type="url" value={disputeUrl} onChange={(e) => setDisputeUrl(e.target.value)} placeholder="Proof Image URL" className="w-full bg-neutral-950 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-white mb-3"/>
+                                {showDisputeInput && (
+                                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="pt-2">
+                                    <textarea value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} placeholder="Explain what is wrong..." className="w-full bg-neutral-950 border border-red-500/30 rounded-lg p-3 text-sm focus:outline-none focus:border-red-500 mb-2" rows={2}/>
+                                    <p className="text-xs text-red-400 font-bold mb-1">Upload Your Proof (Optional)</p>
+                                    <div className="flex gap-2 mb-2 bg-red-950/50 p-1 rounded-lg border border-red-500/30">
+                                      <button onClick={() => setDisputeUploadType("file")} className={`flex-1 py-1 text-xs font-bold rounded-md flex items-center justify-center gap-2 ${disputeUploadType === "file" ? "bg-red-600 text-white" : "text-red-400"}`}><ImageIcon className="w-3 h-3"/> Device</button>
+                                      <button onClick={() => setDisputeUploadType("url")} className={`flex-1 py-1 text-xs font-bold rounded-md flex items-center justify-center gap-2 ${disputeUploadType === "url" ? "bg-red-600 text-white" : "text-red-400"}`}><LinkIcon className="w-3 h-3"/> URL</button>
+                                    </div>
+
+                                    {disputeUploadType === "file" ? (
+                                      <input type="file" accept="image/*" onChange={(e) => setDisputeFile(e.target.files?.[0] || null)} className="w-full mb-3 text-sm text-neutral-400 file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-600 file:text-white"/>
+                                    ) : (
+                                      <input type="url" value={disputeUrl} onChange={(e) => setDisputeUrl(e.target.value)} placeholder="Proof Image URL" className="w-full bg-neutral-950 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-white mb-3"/>
+                                    )}
+                                    <button onClick={() => handleVote(false)} disabled={isVoting} className="w-full py-2 bg-red-600 text-white rounded-lg font-bold flex justify-center">
+                                      {isVoting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit Dispute & Proof"}
+                                    </button>
+                                  </motion.div>
                                 )}
-                                <button onClick={() => handleVote(false)} disabled={isVoting} className="w-full py-2 bg-red-600 text-white rounded-lg font-bold flex justify-center">
-                                  {isVoting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit Dispute & Proof"}
-                                </button>
-                              </motion.div>
+                              </div>
                             )}
                           </div>
                         )}
-                      </div>
+                        {isHost && <p className="text-sm text-yellow-500/80 text-center italic mt-2">Waiting for players to approve...</p>}
+                      </>
                     )}
-                    {isHost && <p className="text-sm text-yellow-500/80 text-center italic mt-2">Waiting for players to approve...</p>}
                   </>
                 )}
               </div>
