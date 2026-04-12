@@ -37,7 +37,10 @@ const mapTournamentData = (t: any): Tournament => ({
   isPrivate: t.is_private ?? t.isPrivate,
   resultImage: t.result_image,
   shortCode: t.short_code,
-  isDeleted: t.is_deleted
+  isDeleted: t.is_deleted,
+  ai_stats: t.ai_stats, // 🔥 NEW: Ensured ai_stats is mapped
+  ai_tampering_flag: t.ai_tampering_flag,
+  ai_confidence: t.ai_confidence
 });
 
 const fetchGameTitleMap = async () => {
@@ -120,7 +123,6 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
       reader.readAsDataURL(blob);
     });
 
-    // 🔥 STRICT PROMPT: Enforcing IN-GAME NAMES and Raw JSON 🔥
     const promptText = `
       You are an expert eSports AI referee. Analyze this match result screenshot for the game "${gameName}".
       CRITICAL INSTRUCTIONS:
@@ -168,68 +170,111 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
     const data = await response.json();
     let rawJson = data.candidates[0].content.parts[0].text;
     
-    // 🔥 CLEANUP: Strip markdown if AI misbehaves 🔥
     rawJson = rawJson.replace(/```json/gi, '').replace(/```/g, '').trim();
     return JSON.parse(rawJson);
 
   } catch (error) {
     console.error("AI Analysis Failed:", error);
-    // Return a fallback so the app doesn't crash, but it triggers admin review
     return { winner: "Unknown", is_tampered: false, confidence: 0, players: [] }; 
   }
 };
 
+// 🔥 CRITICAL FIX 1: AWAIT AI BEFORE SAVING 🔥
 export const completeTournamentMatch = async (tournamentId: string, imageUrl: string, gameName: string = "Unknown Game") => {
-  const { error } = await supabase.from("tournaments").update({ status: "verifying", result_image: imageUrl }).eq("id", tournamentId);
-  if (error) throw new Error("Failed to finalize tournament.");
+  // First update status to verifying and save the image
+  const { error: initialUpdateError } = await supabase
+    .from("tournaments")
+    .update({ status: "verifying", result_image: imageUrl })
+    .eq("id", tournamentId);
 
-  analyzeMatchResultWithAI(imageUrl, gameName).then(async (aiData) => {
+  if (initialUpdateError) throw new Error("Failed to initialize match verification.");
+
+  try {
+    // ⏳ WAIT for AI to finish scanning
+    const aiData = await analyzeMatchResultWithAI(imageUrl, gameName);
+    
     if (aiData) {
       const needsReview = aiData.is_tampered || aiData.confidence < 70;
-      await supabase.from("tournaments").update({
-        ai_stats: aiData,
-        ai_tampering_flag: aiData.is_tampered,
-        ai_confidence: aiData.confidence,
-        ...(needsReview && { status: "admin_review" })
-      }).eq("id", tournamentId);
+      
+      // Update DB with AI stats
+      const { error: finalUpdateError } = await supabase
+        .from("tournaments")
+        .update({
+          ai_stats: aiData,
+          ai_tampering_flag: aiData.is_tampered,
+          ai_confidence: aiData.confidence,
+          ...(needsReview && { status: "admin_review" })
+        })
+        .eq("id", tournamentId);
+
+      if (finalUpdateError) {
+        console.error("Failed to save AI stats to DB", finalUpdateError);
+      }
     }
-  });
+  } catch (err) {
+    console.error("Error during AI processing flow:", err);
+  }
 
   return true;
 };
 
-// 🔥 FAIL-PROOF STATS UPDATER 🔥
+// 🔥 CRITICAL FIX 2: IMPROVED FUZZY MATCHING & LOGGING 🔥
 export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   try {
-    const { data: tourn } = await supabase.from("tournaments").select("game_id, ai_stats").eq("id", tournamentId).single();
-    if (!tourn) return;
+    const { data: tourn, error: tournError } = await supabase
+      .from("tournaments")
+      .select("game_id, ai_stats")
+      .eq("id", tournamentId)
+      .single();
+
+    if (tournError || !tourn) {
+      console.error("Failed to fetch tournament for stats update", tournError);
+      return;
+    }
 
     const gameId = tourn.game_id;
     const aiStats = tourn.ai_stats || {}; 
 
-    const { data: roster } = await supabase.from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
-    if (!roster || roster.length === 0) return;
+    // If AI failed completely, at least give them a 'match played' point
+    const hasAIStats = aiStats && Object.keys(aiStats).length > 0;
+
+    const { data: roster, error: rosterError } = await supabase
+      .from("tournament_participants")
+      .select("user_id")
+      .eq("tournament_id", tournamentId);
+
+    if (rosterError || !roster || roster.length === 0) return;
 
     const userIds = roster.map(r => r.user_id);
-    const { data: linkedGames } = await supabase.from("linked_games").select("*").eq("game_id", gameId).in("user_id", userIds);
+    
+    const { data: linkedGames, error: lgError } = await supabase
+      .from("linked_games")
+      .select("*")
+      .eq("game_id", gameId)
+      .in("user_id", userIds);
+
+    if (lgError) {
+      console.error("Failed to fetch linked games", lgError);
+      return;
+    }
 
     if (linkedGames && linkedGames.length > 0) {
       const cleanString = (str: string) => (str || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-      const aiWinner = cleanString(aiStats.winner);
+      const aiWinner = hasAIStats ? cleanString(aiStats.winner) : "";
 
       for (const lg of linkedGames) {
         let newKills = lg.kills || 0;
         let newWins = lg.wins || 0;
-        // 🔥 Always increment matches played regardless of AI success 🔥
-        let newMatches = (lg.matches_played || 0) + 1; 
+        let newMatches = (lg.matches_played || 0) + 1; // Always increment match played
 
         const cleanLgName = cleanString(lg.in_game_name);
         const cleanLgId = cleanString(lg.in_game_id);
 
-        if (aiStats.players && Array.isArray(aiStats.players)) {
+        if (hasAIStats && aiStats.players && Array.isArray(aiStats.players)) {
           const aiPlayerData = aiStats.players.find((p: any) => {
             const aiName = cleanString(p.name);
             if (!aiName) return false;
+            // Check if the AI extracted name contains the user's IGN/ID, or vice-versa
             return aiName.includes(cleanLgName) || cleanLgName.includes(aiName) || 
                    aiName.includes(cleanLgId) || cleanLgId.includes(aiName);
           });
@@ -242,15 +287,23 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
           }
         }
 
-        if (aiWinner && (aiWinner.includes(cleanLgName) || cleanLgName.includes(aiWinner) || aiWinner.includes(cleanLgId) || cleanLgId.includes(aiWinner))) {
+        if (hasAIStats && aiWinner && (aiWinner.includes(cleanLgName) || cleanLgName.includes(aiWinner) || aiWinner.includes(cleanLgId) || cleanLgId.includes(aiWinner))) {
           newWins += 1;
         }
 
-        await supabase.from("linked_games").update({
-          matches_played: newMatches,
-          kills: newKills,
-          wins: newWins
-        }).eq("id", lg.id);
+        // Apply the update
+        const { error: updateError } = await supabase
+          .from("linked_games")
+          .update({
+            matches_played: newMatches,
+            kills: newKills,
+            wins: newWins
+          })
+          .eq("id", lg.id);
+
+        if (updateError) {
+          console.error(`Failed to update stats for user ${lg.user_id}`, updateError);
+        }
       }
     }
   } catch (error) {
@@ -398,7 +451,6 @@ export const fetchMatchVotes = async (tournamentId: string) => {
   return data || [];
 };
 
-// 🔥 CRITICAL FIX: Only trigger completion EXACTLY once 🔥
 export const submitMatchVote = async (tournamentId: string, userId: string, isApproved: boolean, reason?: string, proofUrl?: string) => {
   const { data: existing } = await supabase.from("match_votes").select("id").eq("tournament_id", tournamentId).eq("user_id", userId).single();
   
@@ -420,7 +472,6 @@ export const submitMatchVote = async (tournamentId: string, userId: string, isAp
     if (!isApproved && proofUrl) {
       await supabase.from("tournaments").update({ status: "admin_review" }).eq("id", tournamentId);
     } else if (approvals >= requiredApprovals) {
-      // PREVENT DOUBLE STATS: Check if it's already completed
       const { data: tCheck } = await supabase.from("tournaments").select("status").eq("id", tournamentId).single();
       if (tCheck && tCheck.status !== "completed") {
         await supabase.from("tournaments").update({ status: "completed" }).eq("id", tournamentId);
