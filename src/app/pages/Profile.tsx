@@ -10,12 +10,13 @@ import {
 } from "../data"; 
 import { 
   ShieldAlert, Gamepad2, AlertCircle, CheckCircle2, Loader2, Save, Edit2, 
-  Swords, Crown, Calendar, Play, ExternalLink, Copy, Check, Flag 
+  Swords, Crown, Calendar, Play, ExternalLink, Copy, Check, Flag, Skull, Trophy 
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import { supabase } from "../../utils/supabase"; 
 
+// 🔥 FIX: No 'export' here to prevent Vite Fast Refresh crash
 const generateFriendCode = (uuid: string) => {
   if (!uuid) return "";
   return parseInt(uuid.split('-')[0], 16).toString().padStart(10, '0');
@@ -24,17 +25,21 @@ const generateFriendCode = (uuid: string) => {
 export function Profile() {
   const { user } = useAuth();
   
+  // Base Profile State
   const [profile, setProfile] = useState<any>(null);
   const [linkedGames, setLinkedGames] = useState<any[]>([]);
   const [platformGames, setPlatformGames] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // New Game UI State
   const [isAddingNewGame, setIsAddingNewGame] = useState(false);
   const [selectedGameToAdd, setSelectedGameToAdd] = useState("");
 
+  // Tournament Dashboard State
   const [enhancedData, setEnhancedData] = useState<EnhancedUserProfile | null>(null);
   const [activeTab, setActiveTab] = useState<"player" | "host">("player");
 
+  // Form State
   const [editingGame, setEditingGame] = useState<string | null>(null);
   const [inGameId, setInGameId] = useState("");
   const [inGameName, setInGameName] = useState("");
@@ -44,6 +49,7 @@ export function Profile() {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Copy Friend Code State
   const [copied, setCopied] = useState(false);
 
   const loadData = async () => {
@@ -79,7 +85,12 @@ export function Profile() {
 
   useEffect(() => {
     loadData();
-    const safetyKillSwitch = setTimeout(() => { setIsLoading(false); }, 3000);
+
+    // 🚨 NUCLEAR OPTION: Force the spinner off after 3 seconds
+    const safetyKillSwitch = setTimeout(() => {
+      setIsLoading(false);
+    }, 3000);
+
     return () => clearTimeout(safetyKillSwitch);
   }, [user]);
 
@@ -93,9 +104,8 @@ export function Profile() {
     setErrorMsg("");
     
     try {
-      // 🔥 UPDATED: Pass preferredModes to save
       await saveLinkedGame(user!.id, gameId, inGameId, inGameName, preferredModes);
-      await loadData(); 
+      await loadData(); // Reload to update UI
       setEditingGame(null);
       setIsAddingNewGame(false);
       setSelectedGameToAdd("");
@@ -121,7 +131,11 @@ export function Profile() {
   };
 
   if (isLoading) {
-    return <div className="min-h-screen bg-neutral-950 flex justify-center items-center"><Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin" /></div>;
+    return (
+      <div className="min-h-screen bg-neutral-950 flex justify-center items-center">
+        <Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin" />
+      </div>
+    );
   }
 
   if (!user || !profile || !enhancedData) {
@@ -133,6 +147,7 @@ export function Profile() {
     );
   }
 
+  // Mini-card for the dashboard columns
   const MiniTournamentCard = ({ tournament }: { tournament: Tournament }) => (
     <Link to={`/tournaments/${tournament.id}`} className="block mb-3">
       <div className="bg-neutral-900 border border-neutral-800 hover:border-cyan-500/50 transition-colors rounded-xl p-4 flex justify-between items-center group">
@@ -148,10 +163,67 @@ export function Profile() {
     </Link>
   );
 
+  // 🔥 NEW: Detailed History Card for Completed Matches 🔥
+  const CompletedMatchCard = ({ tournament }: { tournament: Tournament }) => {
+    const lg = linkedGames.find(g => g.game_id === tournament.gameId);
+    
+    let myKills = 0;
+    let isWinner = false;
+
+    if (tournament.ai_stats && lg) {
+      const cleanString = (str: string) => (str || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+      const cleanLgName = cleanString(lg.in_game_name);
+      const cleanLgId = cleanString(lg.in_game_id);
+
+      const aiWinner = cleanString(tournament.ai_stats.winner);
+      if (aiWinner && (aiWinner.includes(cleanLgName) || cleanLgName.includes(aiWinner) || aiWinner.includes(cleanLgId) || cleanLgId.includes(aiWinner))) {
+        isWinner = true;
+      }
+
+      if (tournament.ai_stats.players) {
+        const me = tournament.ai_stats.players.find((p: any) => {
+          const aiName = cleanString(p.name);
+          if (!aiName) return false;
+          return aiName.includes(cleanLgName) || cleanLgName.includes(aiName) || aiName.includes(cleanLgId) || cleanLgId.includes(aiName);
+        });
+        if (me) {
+          const score = Number(me.score || me.kills);
+          if (!isNaN(score)) myKills = score;
+        }
+      }
+    }
+
+    return (
+      <Link to={`/tournaments/${tournament.id}`} className="block mb-3">
+        <div className={`bg-neutral-900 border transition-all rounded-xl p-4 flex flex-col gap-3 group relative overflow-hidden ${isWinner ? 'border-yellow-500/30 hover:border-yellow-500/60' : 'border-neutral-800 hover:border-cyan-500/50'}`}>
+          {isWinner && <div className="absolute -right-6 -top-6 w-20 h-20 bg-yellow-500/10 blur-xl rounded-full pointer-events-none" />}
+          
+          <div className="flex justify-between items-start z-10">
+            <div>
+              <h4 className={`font-black truncate max-w-[200px] transition-colors ${isWinner ? 'text-yellow-400 group-hover:text-yellow-300' : 'text-white group-hover:text-cyan-400'}`}>{tournament.title}</h4>
+              <p className="text-[10px] text-neutral-500 mt-1 uppercase tracking-wider font-bold">{new Date(tournament.date).toLocaleDateString()}</p>
+            </div>
+            {isWinner ? (
+              <span className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest flex items-center gap-1"><Trophy className="w-3 h-3" /> Victory</span>
+            ) : (
+              <span className="bg-neutral-800 text-neutral-400 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest">Played</span>
+            )}
+          </div>
+
+          <div className="flex justify-between items-center z-10 pt-2 border-t border-neutral-800">
+             <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-400"><Skull className="w-4 h-4 text-fuchsia-500" /> Kills: <span className="text-white">{myKills}</span></div>
+             <ExternalLink className="w-4 h-4 text-neutral-600 group-hover:text-cyan-400 transition-colors" />
+          </div>
+        </div>
+      </Link>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 text-white py-12 px-4 sm:px-6 lg:px-8 pb-24">
       <div className="max-w-5xl mx-auto space-y-12">
         
+        {/* 🚨 BANNED WARNING BANNER 🚨 */}
         {profile?.is_banned && (
           <motion.div 
             initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
@@ -169,6 +241,9 @@ export function Profile() {
           </motion.div>
         )}
 
+        {/* =========================================
+            SECTION 1: MASTER PROFILE HEADER 
+            ========================================= */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-fuchsia-500/10 blur-[80px] rounded-full pointer-events-none" />
           
@@ -243,6 +318,9 @@ export function Profile() {
           </div>
         )}
 
+        {/* =========================================
+            SECTION 2: ANTI-SMURF IDENTITY LOCK (LINKED GAMES)
+            ========================================= */}
         <div>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
             <div>
@@ -254,6 +332,7 @@ export function Profile() {
               </p>
             </div>
             
+            {/* The Add Game Button (Only shows games not yet linked) */}
             {!isAddingNewGame && platformGames.filter(g => !linkedGames.some(lg => lg.game_id === g.id)).length > 0 && (
               <button
                 onClick={() => {
@@ -333,6 +412,7 @@ export function Profile() {
             </motion.div>
           )}
 
+          {/* LINKED GAMES GRID */}
           {linkedGames.length === 0 && !isAddingNewGame ? (
             <div className="text-center py-16 border border-neutral-800 border-dashed rounded-3xl bg-neutral-900/30">
               <Gamepad2 className="w-12 h-12 text-neutral-600 mx-auto mb-4" />
@@ -491,6 +571,7 @@ export function Profile() {
               <Crown className="w-6 h-6 text-fuchsia-400" /> Career Dashboard
             </h2>
             
+            {/* Tab Navigation */}
             <div className="flex gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800 w-full md:w-auto">
               <button
                 onClick={() => setActiveTab("player")}
@@ -545,6 +626,7 @@ export function Profile() {
                 )}
               </div>
 
+              {/* 🔥 COMPLETED TAB: DETAILED HISTORY 🔥 */}
               <div className="bg-neutral-900/30 border border-neutral-800/50 p-5 rounded-2xl h-fit">
                 <h3 className="text-lg font-black flex items-center gap-2 mb-4 pb-2 border-b border-neutral-800/50">
                   <CheckCircle2 className="w-5 h-5 text-cyan-500" />
@@ -553,7 +635,9 @@ export function Profile() {
                 {enhancedData[activeTab === "player" ? "playerTournaments" : "hostedTournaments"].completed.length === 0 ? (
                   <p className="text-sm text-neutral-600 italic">No history available.</p>
                 ) : (
-                  enhancedData[activeTab === "player" ? "playerTournaments" : "hostedTournaments"].completed.map(t => <MiniTournamentCard key={t.id} tournament={t} />)
+                  enhancedData[activeTab === "player" ? "playerTournaments" : "hostedTournaments"].completed.map(t => 
+                    activeTab === "player" ? <CompletedMatchCard key={t.id} tournament={t} /> : <MiniTournamentCard key={t.id} tournament={t} />
+                  )
                 )}
               </div>
 

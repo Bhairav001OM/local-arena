@@ -122,12 +122,13 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
 
     const promptText = `
       Analyze this match result screenshot for the game "${gameName}".
+      Look carefully for exact In-Game Names (often with symbols) and exact In-Game IDs.
       Return ONLY a JSON object with this exact structure (no markdown, no extra text):
       {
-        "winner": "exact in-game player name of the winner",
+        "winner": "exact in-game player name or ID of the winner",
         "is_tampered": boolean (true if the image looks edited/photoshopped),
         "confidence": number (0 to 100 on how sure you are),
-        "players": [{"name": "exact player name", "kills": number (convert score to number)}]
+        "players": [{"name": "exact player name or ID", "score": number (convert score or kills to a number)}]
       }
     `;
 
@@ -185,7 +186,7 @@ export const completeTournamentMatch = async (tournamentId: string, imageUrl: st
   return true;
 };
 
-// 🔥 AUTO STAT UPDATER 🔥
+// 🔥 SUPERCHARGED: IN-GAME NAME FUZZY MATCHING 🔥
 export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   const { data: tourn } = await supabase.from("tournaments").select("game_id, ai_stats").eq("id", tournamentId).single();
   if (!tourn) return;
@@ -200,19 +201,37 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   const { data: linkedGames } = await supabase.from("linked_games").select("*").eq("game_id", gameId).in("user_id", userIds);
 
   if (linkedGames) {
+    // Helper to strip emojis, symbols, and spaces for strict comparison
+    const cleanString = (str: string) => (str || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+
     for (const lg of linkedGames) {
       let newKills = lg.kills || 0;
       let newWins = lg.wins || 0;
-      let newMatches = (lg.matches_played || 0) + 1; 
+      let newMatches = (lg.matches_played || 0) + 1; // Always add 1 match for participating
+
+      const cleanLgName = cleanString(lg.in_game_name);
+      const cleanLgId = cleanString(lg.in_game_id);
 
       if (aiStats.players) {
-        const aiPlayerData = aiStats.players.find((p: any) => p.name.toLowerCase() === lg.in_game_name.toLowerCase());
-        if (aiPlayerData && !isNaN(Number(aiPlayerData.kills))) {
-          newKills += Number(aiPlayerData.kills);
+        // Check if AI name matches Linked In-Game Name OR Linked In-Game ID
+        const aiPlayerData = aiStats.players.find((p: any) => {
+          const aiName = cleanString(p.name);
+          if (!aiName) return false;
+          return aiName.includes(cleanLgName) || cleanLgName.includes(aiName) || 
+                 aiName.includes(cleanLgId) || cleanLgId.includes(aiName);
+        });
+
+        if (aiPlayerData) {
+          const score = Number(aiPlayerData.score || aiPlayerData.kills);
+          if (!isNaN(score)) {
+            newKills += score;
+          }
         }
       }
 
-      if (aiStats.winner && aiStats.winner.toLowerCase() === lg.in_game_name.toLowerCase()) {
+      // Check Winner
+      const aiWinner = cleanString(aiStats.winner);
+      if (aiWinner && (aiWinner.includes(cleanLgName) || cleanLgName.includes(aiWinner) || aiWinner.includes(cleanLgId) || cleanLgId.includes(aiWinner))) {
         newWins += 1;
       }
 
@@ -290,7 +309,7 @@ export const fetchFullUserProfile = async (userId: string): Promise<EnhancedUser
   const gameMap = await fetchGameTitleMap(); 
 
   const { data: hosted } = await supabase.from("tournaments").select("*").eq("host_id", userId).order("date", { ascending: false });
-  const hostedTourns = (hosted || []).map(t => ({ ...mapTournamentData(t), gameName: gameMap[t.game_id] || "Unknown Game" }));
+  const hostedTourns = (hosted || []).map(t => ({ ...mapTournamentData(t), gameName: gameMap[t.game_id] || "Unknown Game", ai_stats: t.ai_stats }));
   const finalHosted = applyAutoStatus(hostedTourns.filter(t => (t as any).is_deleted !== true));
 
   const { data: participants } = await supabase.from("tournament_participants").select("tournament_id").eq("user_id", userId);
@@ -299,7 +318,7 @@ export const fetchFullUserProfile = async (userId: string): Promise<EnhancedUser
   if (participants && participants.length > 0) {
     const tIds = participants.map((p) => p.tournament_id);
     const { data: joined } = await supabase.from("tournaments").select("*").in("id", tIds).order("date", { ascending: false });
-    playerTourns = (joined || []).map(t => ({ ...mapTournamentData(t), gameName: gameMap[t.game_id] || "Unknown Game" }));
+    playerTourns = (joined || []).map(t => ({ ...mapTournamentData(t), gameName: gameMap[t.game_id] || "Unknown Game", ai_stats: t.ai_stats }));
     playerTourns = applyAutoStatus(playerTourns.filter(t => (t as any).is_deleted !== true));
   }
 
@@ -365,7 +384,6 @@ export const fetchMatchVotes = async (tournamentId: string) => {
   return data || [];
 };
 
-// 🔥 CRITICAL FIX: Trigger match completion when players approve 🔥
 export const submitMatchVote = async (tournamentId: string, userId: string, isApproved: boolean, reason?: string, proofUrl?: string) => {
   const { data: existing } = await supabase.from("match_votes").select("id").eq("tournament_id", tournamentId).eq("user_id", userId).single();
   
@@ -377,12 +395,12 @@ export const submitMatchVote = async (tournamentId: string, userId: string, isAp
     if (error) throw error;
   }
 
-  // Auto-Complete Check logic
+  // Auto Complete Logic
   const { data: participants } = await supabase.from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
   const { data: votes } = await supabase.from("match_votes").select("is_approved").eq("tournament_id", tournamentId);
 
   if (participants && votes) {
-    const requiredApprovals = Math.max(1, participants.length - 1); // Need everyone except host to approve
+    const requiredApprovals = Math.max(1, participants.length - 1); 
     const approvals = votes.filter(v => v.is_approved).length;
 
     if (!isApproved && proofUrl) {
@@ -460,6 +478,10 @@ export const unlinkGame = async (userId: string, gameId: string) => {
   if (error) throw error;
   return data;
 };
+
+// ==========================================
+// --- 🤝 SOCIAL: FRIENDS & MESSAGING 🤝 ---
+// ==========================================
 
 export const searchPlayers = async (searchQuery: string) => {
   if (!searchQuery.trim()) return [];
