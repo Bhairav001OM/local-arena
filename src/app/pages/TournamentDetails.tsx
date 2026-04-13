@@ -3,14 +3,14 @@ import { useParams, Link } from "react-router-dom";
 import { 
   Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, 
   Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, 
-  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin, Flag, BrainCircuit, AlertOctagon, ShieldAlert, Timer, Database
+  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin, Flag, BrainCircuit, AlertOctagon, ShieldAlert, Timer, Database, RefreshCw, Terminal
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase"; 
 import { 
   getTournamentById, fetchMessages, sendMessage, fetchTournamentRoster, 
-  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, markPlayerNoShow, type Tournament 
+  completeTournamentMatch, fetchMatchVotes, submitMatchVote, uploadScreenshot, joinTournament, kickPlayer, markPlayerNoShow, reRunAIVerification, type Tournament 
 } from "../../app/data"; 
 
 export function TournamentDetails() {
@@ -28,6 +28,7 @@ export function TournamentDetails() {
   const [screenshotUrl, setScreenshotUrl] = useState("");
   const [hostFile, setHostFile] = useState<File | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isRetryingAI, setIsRetryingAI] = useState(false);
 
   const [votes, setVotes] = useState<any[]>([]);
   const [isVoting, setIsVoting] = useState(false);
@@ -174,6 +175,26 @@ export function TournamentDetails() {
     finally { setIsCompleting(false); }
   };
 
+  const handleRetryAI = async () => {
+    if (!id || !tournament || !tournament.result_image) return;
+    setIsRetryingAI(true);
+    try {
+       setTournament({ 
+         ...tournament, 
+         ai_stats: null, 
+         status: "verifying", 
+         ai_tampering_flag: undefined, 
+         ai_confidence: undefined 
+       } as any);
+       
+       await reRunAIVerification(id, tournament.result_image, tournament.gameName);
+    } catch (error: any) {
+       alert(error.message || "Failed to re-scan image.");
+    } finally {
+       setIsRetryingAI(false);
+    }
+  };
+
   const handleVote = async (isApproved: boolean) => {
     const currentId = user?.id || session?.user?.id;
     if (!currentId) return;
@@ -318,11 +339,11 @@ export function TournamentDetails() {
                   🔍 View Host's Screenshot
                 </a>
 
-                {tournament.status === "verifying" && !tournament.ai_stats ? (
+                {['verifying', 'admin_review', 'disputed'].includes(tournament.status) && !tournament.ai_stats ? (
                    <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-6 text-center mb-6 shadow-[inset_0_0_20px_rgba(99,102,241,0.2)]">
                      <BrainCircuit className="w-10 h-10 text-indigo-400 mx-auto mb-3 animate-pulse" />
                      <h3 className="text-lg font-black text-indigo-400 animate-pulse">AI is Scanning Image...</h3>
-                     <p className="text-xs text-indigo-300 mt-2">Please wait. Voting will open once AI finishes verification.</p>
+                     <p className="text-xs text-indigo-300 mt-2">Please wait. Checking text and verifying winner.</p>
                    </div>
                 ) : (
                   <>
@@ -398,7 +419,6 @@ export function TournamentDetails() {
               </div>
             )}
 
-            {/* 🔥 NEW ACTIVE ROSTER (PRIORITIZES IN-GAME NAME) 🔥 */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col max-h-[400px]">
               <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-2">
                 <h3 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-cyan-400" /> Active Roster</h3>
@@ -483,16 +503,39 @@ export function TournamentDetails() {
               </div>
             )}
 
+            {/* 🔥 NEW AI REPORT WITH K/D/A + DAMAGE TABLE 🔥 */}
             {tournament.ai_stats && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-indigo-950/30 border-2 border-indigo-500/40 rounded-3xl p-8 shadow-[0_0_30px_rgba(99,102,241,0.1)]">
-                <div className="flex items-center justify-between mb-6 border-b border-indigo-500/30 pb-4">
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-indigo-950/30 border-2 border-indigo-500/40 rounded-3xl p-8 shadow-[0_0_30px_rgba(99,102,241,0.1)] mt-4">
+                
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 border-b border-indigo-500/30 pb-4 gap-4">
                   <h3 className="text-2xl font-black text-indigo-400 flex items-center gap-3">
                     <BrainCircuit className="w-8 h-8" /> Final AI Match Report
                   </h3>
-                  <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider ${tournament.ai_confidence && tournament.ai_confidence > 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'}`}>
-                    {tournament.ai_confidence || 0}% Confident
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {isHost && (
+                      <button 
+                        onClick={handleRetryAI}
+                        disabled={isRetryingAI}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg"
+                      >
+                        {isRetryingAI ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Re-Scan
+                      </button>
+                    )}
+                    <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider ${tournament.ai_confidence && tournament.ai_confidence > 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'}`}>
+                      {tournament.ai_confidence || 0}% Confident
+                    </span>
+                  </div>
                 </div>
+
+                {tournament.ai_stats.summary && (
+                  <div className="mb-6 bg-black/50 border border-neutral-800 rounded-xl p-4 font-mono text-sm relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                    <div className="flex items-center gap-2 text-indigo-400 mb-2">
+                      <Terminal className="w-4 h-4" /> <span className="font-bold tracking-widest text-xs uppercase">AI Processing Log</span>
+                    </div>
+                    <p className="text-neutral-300 leading-relaxed pl-2">{tournament.ai_stats.summary}</p>
+                  </div>
+                )}
 
                 {tournament.ai_tampering_flag && (
                   <div className="bg-red-500/10 border border-red-500 text-red-400 p-4 rounded-xl flex items-center gap-3 mb-6 font-bold">
@@ -501,31 +544,42 @@ export function TournamentDetails() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-neutral-950/80 rounded-2xl p-6 border border-neutral-800 md:col-span-1 flex flex-col justify-center items-center text-center">
-                    <Trophy className="w-12 h-12 text-yellow-500 mb-3" />
-                    <p className="text-xs text-neutral-500 uppercase tracking-widest font-bold mb-1">Detected Winner (In-Game)</p>
-                    <p className="text-2xl font-black text-white break-all">{tournament.ai_stats.winner || "Unknown"}</p>
+                <div className="grid grid-cols-1 gap-6">
+                  <div className="bg-neutral-950/80 rounded-2xl p-6 border border-neutral-800 flex items-center gap-6 justify-center">
+                    <Trophy className="w-12 h-12 text-yellow-500" />
+                    <div>
+                      <p className="text-xs text-neutral-500 uppercase tracking-widest font-bold mb-1">Detected Winner</p>
+                      <p className="text-2xl font-black text-white">{tournament.ai_stats.winner || "Unknown"}</p>
+                    </div>
                   </div>
 
-                  {tournament.ai_stats.players && tournament.ai_stats.players.length > 0 && (
-                    <div className="bg-neutral-950/80 rounded-2xl overflow-hidden border border-neutral-800 md:col-span-2">
+                  {/* 🔥 K/D/A & DAMAGE TABLE 🔥 */}
+                  {tournament.ai_stats.players && tournament.ai_stats.players.length > 0 ? (
+                    <div className="bg-neutral-950/80 rounded-2xl overflow-hidden border border-neutral-800">
                       <table className="w-full text-left text-sm">
                         <thead className="bg-neutral-900 text-neutral-400">
                           <tr>
-                            <th className="px-5 py-4 font-bold uppercase text-xs tracking-wider">In-Game Name / ID</th>
-                            <th className="px-5 py-4 font-bold uppercase text-xs tracking-wider text-right">Kills / Score</th>
+                            <th className="px-5 py-4 font-bold uppercase text-xs tracking-wider">Player</th>
+                            <th className="px-5 py-4 font-bold uppercase text-xs tracking-wider text-center">K / D / A</th>
+                            <th className="px-5 py-4 font-bold uppercase text-xs tracking-wider text-right">Damage</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-neutral-800">
                           {tournament.ai_stats.players.map((p: any, i: number) => (
                             <tr key={i} className="hover:bg-neutral-900/50 transition-colors">
                               <td className="px-5 py-4 font-bold text-white text-base">{p.name}</td>
-                              <td className="px-5 py-4 font-black text-cyan-400 text-right text-lg">{p.score || p.kills}</td>
+                              <td className="px-5 py-4 font-black text-neutral-300 text-center tracking-widest">
+                                <span className="text-emerald-400">{p.kills ?? 0}</span> / <span className="text-red-400">{p.deaths ?? 0}</span> / <span className="text-yellow-400">{p.assists ?? 0}</span>
+                              </td>
+                              <td className="px-5 py-4 font-black text-cyan-400 text-right text-lg">{p.damage ?? (p.score ?? 0)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                  ) : (
+                    <div className="bg-neutral-950/80 rounded-2xl border border-neutral-800 flex items-center justify-center p-6">
+                      <p className="text-neutral-500 italic">No player stats extracted.</p>
                     </div>
                   )}
                 </div>

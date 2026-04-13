@@ -13,6 +13,7 @@ export interface Tournament {
   date: string;
   time?: string;
   location: string;
+  mode?: string; 
   isPrivate?: boolean; 
   password?: string;
   host_id?: string;
@@ -103,13 +104,10 @@ export const uploadScreenshot = async (file: File, userId: string) => {
   return data.publicUrl;
 };
 
-// ==========================================
-// 🔥 SMART AI LOGIC (IN-GAME NAME & ID FOCUSED) 🔥
-// ==========================================
 const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string, expectedPlayerList: string) => {
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
-    if (!apiKey) throw new Error("API Key missing");
+    if (!apiKey) throw new Error("API Key is missing in Environment Variables!");
 
     const imageResp = await fetch(imageUrl);
     const blob = await imageResp.blob();
@@ -120,26 +118,34 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string, expe
       reader.readAsDataURL(blob);
     });
 
-    // 🔥 THE FIX: Give AI the exact In-Game Names and IDs to map against
     const promptText = `
       You are an expert eSports AI referee analyzing a match result screenshot for "${gameName}".
       
-      REGISTERED LOBBY PLAYERS:
+      REGISTERED LOBBY PLAYERS (For Context Only):
       ${expectedPlayerList}
       
       CRITICAL INSTRUCTIONS:
-      1. Look at the screenshot and figure out who won and how many kills/points players got.
-      2. MATCH EXACTLY: Compare the names/fonts/IDs in the screenshot with the "REGISTERED LOBBY PLAYERS" list above.
-      3. You MUST return the exact "Name" from the list above for the winner and players. DO NOT make up names or use weird font text. Map it to the exact Name from the list.
-      4. Return ONLY a valid JSON object. DO NOT use markdown formatting (\`\`\`json).
+      1. Carefully read the stylized fonts.
+      2. Write a brief "summary" explaining exactly what text, names, K/D/A (Kills/Deaths/Assists), and Damage you visually read.
+      3. Find the Winner (Look for "Booyah", "Victory", "#1").
+      4. Extract Kills, Deaths, Assists, and Damage for EVERY VISIBLE PLAYER.
+      5. VERY IMPORTANT: Under the "name" field, write the EXACT raw name you see on the screen (e.g., _CHIRAG_FF_). DO NOT output "Unknown" if you can read the text.
+      6. Return ONLY a valid JSON object. No markdown.
       
       Format exactly like this:
       {
-        "winner": "Exact Name from the list",
+        "summary": "Brief explanation...",
+        "winner": "Exact Name of winner from screen",
         "is_tampered": false,
         "confidence": 95,
         "players": [
-          {"name": "Exact Name from the list", "kills": 5}
+          {
+            "name": "Raw Name from screen", 
+            "kills": 5,
+            "deaths": 4,
+            "assists": 0,
+            "damage": 1809
+          }
         ]
       }
     `;
@@ -151,6 +157,12 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string, expe
           { inline_data: { mime_type: blob.type, data: base64Data } }
         ]
       }],
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+      ],
       generationConfig: { responseMimeType: "application/json" }
     };
 
@@ -160,18 +172,25 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string, expe
       body: JSON.stringify(requestBody)
     });
 
-    if (!response.ok) throw new Error("AI API failed");
+    if (!response.ok) {
+      const errTxt = await response.text();
+      console.error("[AI] API Response Error:", errTxt);
+      throw new Error("AI API Request Failed: Check Console");
+    }
 
     const data = await response.json();
+    
+    if (data.promptFeedback?.blockReason || data.candidates[0]?.finishReason === 'SAFETY') {
+      return { summary: "Google Safety Filters blocked this image due to detected violence/guns.", winner: "Unknown", is_tampered: false, confidence: 0, players: [] };
+    }
+
     let rawJson = data.candidates[0].content.parts[0].text;
     rawJson = rawJson.replace(/```json/gi, '').replace(/```/g, '').trim();
-    
-    console.log("[AI] Extracted Data mapped to IN-GAME Names:", rawJson);
     return JSON.parse(rawJson);
 
-  } catch (error) {
-    console.error("AI Analysis Failed:", error);
-    return { winner: "Unknown", is_tampered: false, confidence: 0, players: [] }; 
+  } catch (error: any) {
+    console.error("[AI] Fatal Analysis Error:", error);
+    return { summary: `API Error or Processing Failure: ${error.message}`, winner: "Unknown", is_tampered: false, confidence: 0, players: [] }; 
   }
 };
 
@@ -191,7 +210,6 @@ export const completeTournamentMatch = async (tournamentId: string, imageUrl: st
         const userIds = roster.map(r => r.user_id);
         const { data: linkedGames } = await supabase.from("linked_games").select("in_game_name, in_game_id").eq("game_id", tourn.game_id).in("user_id", userIds);
         if (linkedGames) {
-          // Send both Name and ID to AI so it has maximum context
           expectedNamesString = linkedGames.map(lg => `- Name: "${lg.in_game_name}", ID: "${lg.in_game_id}"`).join("\n");
         }
       }
@@ -211,20 +229,56 @@ export const completeTournamentMatch = async (tournamentId: string, imageUrl: st
   } catch (err) {
     console.error("Error during AI processing flow:", err);
   }
-
   return true;
 };
 
-// 🔥 EXACT MATCH STATS UPDATER 🔥
+export const reRunAIVerification = async (tournamentId: string, imageUrl: string, gameName: string = "Unknown Game") => {
+  try {
+    await supabase.from("tournaments").update({ 
+      ai_stats: null, status: "verifying", ai_tampering_flag: null, ai_confidence: null 
+    }).eq("id", tournamentId);
+
+    const { data: tourn } = await supabase.from("tournaments").select("game_id").eq("id", tournamentId).single();
+    let expectedNamesString = "";
+    
+    if (tourn) {
+      const { data: roster } = await supabase.from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
+      if (roster && roster.length > 0) {
+        const userIds = roster.map(r => r.user_id);
+        const { data: linkedGames } = await supabase.from("linked_games").select("in_game_name, in_game_id").eq("game_id", tourn.game_id).in("user_id", userIds);
+        if (linkedGames) {
+          expectedNamesString = linkedGames.map(lg => `- Name: "${lg.in_game_name}", ID: "${lg.in_game_id}"`).join("\n");
+        }
+      }
+    }
+
+    const aiData = await analyzeMatchResultWithAI(imageUrl, gameName, expectedNamesString);
+    
+    if (aiData) {
+      const needsReview = aiData.is_tampered || aiData.confidence < 70 || aiData.winner === "Unknown";
+      const updatePayload: any = {
+        ai_stats: aiData, ai_tampering_flag: aiData.is_tampered, ai_confidence: aiData.confidence,
+      };
+      
+      if (needsReview) updatePayload.status = "admin_review";
+      else updatePayload.status = "verifying";
+
+      await supabase.from("tournaments").update(updatePayload).eq("id", tournamentId);
+    }
+  } catch (err) { console.error("Error during Re-scan:", err); }
+  return true;
+};
+
 export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   console.log(`[SYS] Starting Stats Sync for Tournament: ${tournamentId}`);
   try {
     const { data: tourn, error: tournError } = await supabase
-      .from("tournaments").select("game_id, ai_stats").eq("id", tournamentId).single();
+      .from("tournaments").select("game_id, mode, ai_stats").eq("id", tournamentId).single();
 
     if (tournError || !tourn) return;
 
     const gameId = tourn.game_id;
+    const gameMode = tourn.mode || "Unranked"; 
     const aiStats = tourn.ai_stats || {}; 
     const hasAIStats = aiStats && Object.keys(aiStats).length > 0;
 
@@ -234,49 +288,67 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
     if (!roster || roster.length === 0) return;
 
     const userIds = roster.map(r => r.user_id);
-    const { data: linkedGames, error: lgError } = await supabase
+    const { data: linkedGames } = await supabase
       .from("linked_games").select("*").eq("game_id", gameId).in("user_id", userIds);
-
-    if (lgError) { console.error("Linked games fetch error:", lgError); return; }
 
     if (linkedGames && linkedGames.length > 0) {
       const cleanString = (str: string) => (str || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-      const aiWinner = hasAIStats ? cleanString(aiStats.winner) : "";
+      const aiWinner = hasAIStats && aiStats.winner ? cleanString(aiStats.winner) : "";
 
       for (const lg of linkedGames) {
-        let newKills = lg.kills || 0;
-        let newWins = lg.wins || 0;
-        let newMatches = (lg.matches_played || 0) + 1; // Always increment match played
-
         const cleanLgName = cleanString(lg.in_game_name);
         const cleanLgId = cleanString(lg.in_game_id);
 
+        let matchKills = 0, matchDeaths = 0, matchAssists = 0, matchDamage = 0;
+        let isWinner = false;
+
         if (hasAIStats && aiStats.players && Array.isArray(aiStats.players)) {
           const aiPlayerData = aiStats.players.find((p: any) => {
+            if (!p.name) return false;
             const aiName = cleanString(p.name);
             return aiName === cleanLgName || aiName.includes(cleanLgName) || cleanLgName.includes(aiName);
           });
+          
           if (aiPlayerData) {
-            const score = Number(aiPlayerData.score || aiPlayerData.kills);
-            if (!isNaN(score)) newKills += score;
+            matchKills = Number(aiPlayerData.kills) || 0;
+            matchDeaths = Number(aiPlayerData.deaths) || 0;
+            matchAssists = Number(aiPlayerData.assists) || 0;
+            matchDamage = Number(aiPlayerData.damage || aiPlayerData.score) || 0;
           }
         }
 
         if (hasAIStats && aiWinner && (aiWinner === cleanLgName || aiWinner.includes(cleanLgName) || cleanLgName.includes(aiWinner))) {
-          newWins += 1;
+          isWinner = true;
         }
 
-        const { error: updateError } = await supabase.from("linked_games").update({ matches_played: newMatches, kills: newKills, wins: newWins }).eq("id", lg.id);
-        if (updateError) console.error(`[SYS] Failed to update stats for ${lg.in_game_name}:`, updateError);
-        else console.log(`[SYS] Updated Profile: ${lg.in_game_name} -> Kills: ${newKills}, Wins: ${newWins}`);
+        const { data: currentStats } = await supabase.from('player_stats')
+          .select('*')
+          .match({ user_id: lg.user_id, game_id: gameId, game_mode: gameMode })
+          .maybeSingle();
+
+        const newMatches = (currentStats?.matches_played || 0) + 1;
+        const newWins = (currentStats?.wins || 0) + (isWinner ? 1 : 0);
+        const newKills = (currentStats?.kills || 0) + matchKills;
+        const newDeaths = (currentStats?.deaths || 0) + matchDeaths;
+        const newAssists = (currentStats?.assists || 0) + matchAssists;
+        const newDamage = (currentStats?.damage || 0) + matchDamage;
+
+        if (currentStats) {
+          await supabase.from('player_stats').update({
+            matches_played: newMatches, wins: newWins, kills: newKills, deaths: newDeaths, assists: newAssists, damage: newDamage
+          }).eq('id', currentStats.id);
+        } else {
+          await supabase.from('player_stats').insert({
+            user_id: lg.user_id, game_id: gameId, game_mode: gameMode,
+            matches_played: newMatches, wins: newWins, kills: newKills, deaths: newDeaths, assists: newAssists, damage: newDamage
+          });
+        }
+        console.log(`[SYS] Profile Updated in Database for ${lg.in_game_name}`);
       }
     }
-  } catch (error) {
-    console.error("[SYS] Critical error in stat application:", error);
-  }
+  } catch (error) { console.error("[SYS] Critical error in stat application:", error); }
 };
 
-// ... REST OF THE FUNCTIONS REMAIN UNCHANGED ...
 export const createTournament = async (formData: any, _token: string, userId: string) => {
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).single();
   if (profile?.is_banned === true) throw new Error("🚨 BANNED: Your account has been suspended.");
@@ -369,7 +441,11 @@ export const getUserProfile = async (userId: string) => {
   if (profileError) throw profileError;
   const { data: linkedGames, error: gamesError } = await supabase.from("linked_games").select("*").eq("user_id", userId);
   if (gamesError) throw gamesError;
-  return { profile, linkedGames };
+  
+  const { data: playerStats, error: statsError } = await supabase.from("player_stats").select("*").eq("user_id", userId);
+  if (statsError) throw statsError;
+
+  return { profile, linkedGames, playerStats };
 };
 
 export const saveLinkedGame = async (userId: string, gameId: string, inGameId: string, inGameName: string, preferredModes: string[] = []) => {

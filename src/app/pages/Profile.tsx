@@ -28,6 +28,7 @@ export function Profile() {
   // Base Profile State
   const [profile, setProfile] = useState<any>(null);
   const [linkedGames, setLinkedGames] = useState<any[]>([]);
+  const [playerStats, setPlayerStats] = useState<any[]>([]); // 🔥 NEW: For dynamic stats
   const [platformGames, setPlatformGames] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -43,8 +44,10 @@ export function Profile() {
   const [editingGame, setEditingGame] = useState<string | null>(null);
   const [inGameId, setInGameId] = useState("");
   const [inGameName, setInGameName] = useState("");
-  // 🔥 NEW: Store selected preferred modes
   const [preferredModes, setPreferredModes] = useState<string[]>([]);
+  
+  // 🔥 NEW: State to track which mode tab is active per game
+  const [selectedModeView, setSelectedModeView] = useState<Record<string, string>>({});
   
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -62,6 +65,7 @@ export function Profile() {
       const data = await getUserProfile(user.id);
       setProfile(data?.profile || null);
       setLinkedGames(data?.linkedGames || []);
+      setPlayerStats(data?.playerStats || []); // Fetch fresh stats
 
       const dashboardData = await fetchFullUserProfile(user.id);
       setEnhancedData(dashboardData);
@@ -147,7 +151,6 @@ export function Profile() {
     );
   }
 
-  // Mini-card for the dashboard columns
   const MiniTournamentCard = ({ tournament }: { tournament: Tournament }) => (
     <Link to={`/tournaments/${tournament.id}`} className="block mb-3">
       <div className="bg-neutral-900 border border-neutral-800 hover:border-cyan-500/50 transition-colors rounded-xl p-4 flex justify-between items-center group">
@@ -163,7 +166,6 @@ export function Profile() {
     </Link>
   );
 
-  // 🔥 NEW: Detailed History Card for Completed Matches 🔥
   const CompletedMatchCard = ({ tournament }: { tournament: Tournament }) => {
     const lg = linkedGames.find(g => g.game_id === tournament.gameId);
     
@@ -319,7 +321,7 @@ export function Profile() {
         )}
 
         {/* =========================================
-            SECTION 2: ANTI-SMURF IDENTITY LOCK (LINKED GAMES)
+            SECTION 2: LINKED GAMES (UNIVERSAL MODES)
             ========================================= */}
         <div>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -332,7 +334,6 @@ export function Profile() {
               </p>
             </div>
             
-            {/* The Add Game Button (Only shows games not yet linked) */}
             {!isAddingNewGame && platformGames.filter(g => !linkedGames.some(lg => lg.game_id === g.id)).length > 0 && (
               <button
                 onClick={() => {
@@ -346,7 +347,7 @@ export function Profile() {
             )}
           </div>
 
-          {/* THE ADD NEW GAME FORM */}
+          {/* ADD NEW GAME FORM */}
           {isAddingNewGame && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-neutral-900/80 backdrop-blur-sm border border-cyan-500/30 rounded-2xl p-6 mb-8 shadow-xl shadow-cyan-500/5">
               <h3 className="font-bold text-lg mb-4 text-cyan-400 flex items-center gap-2">
@@ -376,7 +377,6 @@ export function Profile() {
                 />
               </div>
 
-              {/* 🔥 MODE SELECTOR FOR ADDING A NEW GAME 🔥 */}
               {selectedGameToAdd && platformGames.find(g => g.id === selectedGameToAdd)?.official_modes?.length > 0 && (
                 <div className="mt-4 p-4 bg-neutral-950/50 rounded-xl border border-neutral-800">
                   <p className="text-xs text-neutral-400 uppercase tracking-wider font-bold mb-3">Your Preferred Modes</p>
@@ -426,7 +426,29 @@ export function Profile() {
                 if (!game) return null; 
                 
                 const isEditing = editingGame === game.id;
-                const hasPlayedMatches = (linkedData.matches_played > 0) || (linkedData.wins > 0) || (linkedData.kills > 0);
+                
+                // 🔥 UNIVERSAL MODE TABS LOGIC 🔥
+                const gameModes = ["Global", ...(game.official_modes || [])];
+                const activeMode = selectedModeView[game.id] || "Global";
+                
+                let modeStats = { matches_played: 0, wins: 0, kills: 0, deaths: 0, assists: 0, damage: 0 };
+                
+                if (activeMode === "Global") {
+                  const allGameStats = playerStats.filter(s => s.game_id === game.id);
+                  allGameStats.forEach(s => {
+                    modeStats.matches_played += (s.matches_played || 0);
+                    modeStats.wins += (s.wins || 0);
+                    modeStats.kills += (s.kills || 0);
+                    modeStats.deaths += (s.deaths || 0);
+                    modeStats.assists += (s.assists || 0);
+                    modeStats.damage += (s.damage || 0);
+                  });
+                } else {
+                  const specificStat = playerStats.find(s => s.game_id === game.id && s.game_mode === activeMode);
+                  if (specificStat) modeStats = specificStat;
+                }
+
+                const hasPlayedMatches = modeStats.matches_played > 0;
 
                 return (
                   <motion.div layout key={game.id} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 relative shadow-lg flex flex-col justify-between">
@@ -442,7 +464,6 @@ export function Profile() {
                           <input type="text" placeholder="In-Game Name" value={inGameName} onChange={(e) => setInGameName(e.target.value)} className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-3 text-sm text-white focus:border-cyan-500 outline-none" />
                           <input type="text" placeholder="Exact Game ID" value={inGameId} onChange={(e) => setInGameId(e.target.value)} className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-4 py-3 text-sm text-white focus:border-cyan-500 outline-none font-mono" />
                           
-                          {/* 🔥 MODE SELECTOR FOR EDITING EXISTING GAME 🔥 */}
                           {game.official_modes && game.official_modes.length > 0 && (
                             <div className="pt-2 pb-2">
                               <p className="text-[10px] text-neutral-400 uppercase tracking-wider font-bold mb-2">Update Modes</p>
@@ -482,22 +503,47 @@ export function Profile() {
                             <p className="font-mono text-cyan-400 break-all">{linkedData.in_game_id}</p>
                           </div>
 
-                          <div className="grid grid-cols-3 gap-3">
+                          {/* 🔥 DYNAMIC MODE TABS UI 🔥 */}
+                          <div className="bg-neutral-950 p-2 rounded-xl border border-neutral-800 flex overflow-x-auto custom-scrollbar mb-4 gap-2">
+                            {gameModes.map((mode: string) => (
+                              <button 
+                                key={mode} 
+                                onClick={() => setSelectedModeView(prev => ({ ...prev, [game.id]: mode }))}
+                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
+                                  activeMode === mode 
+                                    ? "bg-cyan-600 text-white shadow-lg shadow-cyan-500/20" 
+                                    : "text-neutral-500 hover:text-white hover:bg-neutral-900"
+                                }`}
+                              >
+                                {mode}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* 🔥 STATS GRID FOR SELECTED MODE 🔥 */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center">
                               <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Matches</p>
-                              <p className="text-xl font-black text-white">{linkedData.matches_played || 0}</p>
+                              <p className="text-xl font-black text-white">{modeStats.matches_played}</p>
                             </div>
                             <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center shadow-[inset_0_0_20px_rgba(16,185,129,0.05)]">
                               <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mb-1">Wins</p>
-                              <p className="text-xl font-black text-emerald-400">{linkedData.wins || 0}</p>
+                              <p className="text-xl font-black text-emerald-400">{modeStats.wins}</p>
+                            </div>
+                            <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center">
+                              <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">K/D/A</p>
+                              <p className="text-sm font-black mt-1">
+                                <span className="text-emerald-400">{modeStats.kills}</span>/
+                                <span className="text-red-400">{modeStats.deaths}</span>/
+                                <span className="text-yellow-400">{modeStats.assists}</span>
+                              </p>
                             </div>
                             <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center shadow-[inset_0_0_20px_rgba(217,70,239,0.05)]">
-                              <p className="text-[10px] font-bold text-fuchsia-500 uppercase tracking-wider mb-1">Kills</p>
-                              <p className="text-xl font-black text-fuchsia-400">{linkedData.kills || 0}</p>
+                              <p className="text-[10px] font-bold text-fuchsia-500 uppercase tracking-wider mb-1">Damage</p>
+                              <p className="text-xl font-black text-fuchsia-400">{modeStats.damage}</p>
                             </div>
                           </div>
 
-                          {/* 🔥 NEW: DISPLAY SELECTED MODES 🔥 */}
                           {linkedData.preferred_modes && linkedData.preferred_modes.length > 0 && (
                             <div className="pt-2">
                               <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-2">Preferred Modes</p>
@@ -544,7 +590,7 @@ export function Profile() {
                               onClick={() => {
                                 setInGameId(linkedData.in_game_id);
                                 setInGameName(linkedData.in_game_name);
-                                setPreferredModes(linkedData.preferred_modes || []); // Pre-fill modes
+                                setPreferredModes(linkedData.preferred_modes || []); 
                                 setEditingGame(game.id);
                               }}
                               className="text-xs font-bold flex items-center text-cyan-500 hover:text-cyan-400 transition-colors bg-cyan-500/10 px-3 py-1.5 rounded-lg border border-cyan-500/20"
@@ -571,7 +617,6 @@ export function Profile() {
               <Crown className="w-6 h-6 text-fuchsia-400" /> Career Dashboard
             </h2>
             
-            {/* Tab Navigation */}
             <div className="flex gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800 w-full md:w-auto">
               <button
                 onClick={() => setActiveTab("player")}
@@ -626,7 +671,6 @@ export function Profile() {
                 )}
               </div>
 
-              {/* 🔥 COMPLETED TAB: DETAILED HISTORY 🔥 */}
               <div className="bg-neutral-900/30 border border-neutral-800/50 p-5 rounded-2xl h-fit">
                 <h3 className="text-lg font-black flex items-center gap-2 mb-4 pb-2 border-b border-neutral-800/50">
                   <CheckCircle2 className="w-5 h-5 text-cyan-500" />
