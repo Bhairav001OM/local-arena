@@ -46,7 +46,6 @@ export function TournamentDetails() {
   const [showPasswordBox, setShowPasswordBox] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
-  // 🔥 NEW: Sync Timer State
   const [syncCountdown, setSyncCountdown] = useState<number | null>(null);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -85,9 +84,8 @@ export function TournamentDetails() {
         if (!isMounted) return;
         setTournament(data);
 
-        // 🔥 Trigger Timer if Completed
         if (data.status === "completed") {
-          setSyncCountdown(5); // Start 5 second countdown
+          setSyncCountdown(5); 
         }
 
         if (data.status === "verifying" || data.status === "disputed" || data.status === "completed" || data.status === "admin_review") {
@@ -110,7 +108,6 @@ export function TournamentDetails() {
     return () => { isMounted = false; };
   }, [id, user?.id, session?.user?.id]); 
 
-  // Countdown Logic
   useEffect(() => {
     if (syncCountdown !== null && syncCountdown > 0) {
       const timer = setTimeout(() => setSyncCountdown(syncCountdown - 1), 1000);
@@ -118,7 +115,6 @@ export function TournamentDetails() {
     }
   }, [syncCountdown]);
 
-  // Real-time logic
   useEffect(() => {
     if (!id || !tournament || isBanned) return;
     
@@ -227,7 +223,6 @@ export function TournamentDetails() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white pb-24">
-      {/* Header */}
       <div className="bg-neutral-900 border-b border-neutral-800 pt-20 pb-10 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <Link to="/tournaments" className="inline-flex items-center text-neutral-400 hover:text-white mb-6 font-medium">
@@ -244,7 +239,6 @@ export function TournamentDetails() {
             </motion.div>
           )}
 
-          {/* 🔥 LIVE SYNC TIMER BANNER 🔥 */}
           {syncCountdown !== null && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6 overflow-hidden">
               {syncCountdown > 0 ? (
@@ -294,10 +288,8 @@ export function TournamentDetails() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* ================= LEFT COLUMN ================= */}
           <div className="space-y-6">
             
-            {/* 1. Tournament Intel */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-4 border-b border-neutral-800 pb-2">Tournament Intel</h3>
               <div className="space-y-4">
@@ -316,7 +308,6 @@ export function TournamentDetails() {
               </div>
             </div>
 
-            {/* 2. Verification UI (Stats moved to Right Column) */}
             {(tournament.status === "verifying" || tournament.status === "completed" || tournament.status === "disputed" || tournament.status === "admin_review") && tournament.result_image && (
               <div className="bg-yellow-950/20 border-2 border-yellow-500/50 rounded-2xl p-6">
                 <h3 className="text-lg font-black text-yellow-400 flex items-center gap-2 mb-4">
@@ -327,7 +318,6 @@ export function TournamentDetails() {
                   🔍 View Host's Screenshot
                 </a>
 
-                {/* SAFE VOTE UI: Hidden until AI finishes! */}
                 {tournament.status === "verifying" && !tournament.ai_stats ? (
                    <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-6 text-center mb-6 shadow-[inset_0_0_20px_rgba(99,102,241,0.2)]">
                      <BrainCircuit className="w-10 h-10 text-indigo-400 mx-auto mb-3 animate-pulse" />
@@ -388,7 +378,6 @@ export function TournamentDetails() {
               </div>
             )}
 
-            {/* 3. Host Controls */}
             {isHost && (tournament.status === "upcoming" || tournament.status === "ongoing") && (
               <div className="bg-fuchsia-950/30 border-2 border-fuchsia-500/50 rounded-2xl p-6">
                 <h3 className="text-lg font-black text-fuchsia-400 flex items-center gap-2 mb-4"><Trophy className="w-5 h-5" /> Host Controls</h3>
@@ -409,7 +398,7 @@ export function TournamentDetails() {
               </div>
             )}
 
-            {/* 4. Active Roster */}
+            {/* 🔥 NEW ACTIVE ROSTER (PRIORITIZES IN-GAME NAME) 🔥 */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 flex flex-col max-h-[400px]">
               <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-2">
                 <h3 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-cyan-400" /> Active Roster</h3>
@@ -419,38 +408,42 @@ export function TournamentDetails() {
                 {roster.length === 0 ? (
                   <p className="text-sm text-neutral-500 italic text-center py-4">Lobby is currently empty.</p>
                 ) : (
-                  roster.map((player: any) => (
-                    <Link 
-                      key={player.user_id} 
-                      to={`/player/${player.user_id}`}
-                      className="flex items-center gap-3 bg-neutral-950 p-2.5 rounded-xl border border-neutral-800/50 transition-all hover:bg-neutral-900 hover:border-cyan-500/50 group block"
-                    >
-                      <img src={player.profiles?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=fallback"} alt="avatar" className="w-10 h-10 rounded-full border border-neutral-700 object-cover shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-white truncate group-hover:text-cyan-400 transition-colors">
-                          {player.profiles?.display_name} 
-                          {player.user_id === tournament.host_id && <span className="ml-2 text-[10px] bg-fuchsia-500/20 text-fuchsia-400 px-1.5 py-0.5 rounded uppercase tracking-wider">Host</span>}
-                        </p>
-                        <p className="text-xs text-cyan-500 font-mono truncate">ID: {player.in_game_id}</p>
-                      </div>
-                      
-                      {isHost && player.user_id !== currentId && tournament.status === "upcoming" && (
-                        <div className="flex gap-1 z-10 relative shrink-0">
-                          <button onClick={(e) => { e.preventDefault(); handleKickPlayer(player.user_id, player.profiles?.display_name); }} className="p-2 bg-neutral-800 text-neutral-400 rounded-lg hover:bg-neutral-700 hover:text-white border border-neutral-700"><UserMinus className="w-4 h-4" /></button>
-                          <button onClick={(e) => { e.preventDefault(); handleNoShowPenalty(player.user_id, player.profiles?.display_name); }} className="p-2 bg-red-900/30 text-red-500 rounded-lg hover:bg-red-600 hover:text-white border border-red-500/20"><Flag className="w-4 h-4" /></button>
+                  roster.map((player: any) => {
+                    const displayName = player.in_game_name && player.in_game_name !== "Unknown" ? player.in_game_name : player.profiles?.display_name;
+                    
+                    return (
+                      <Link 
+                        key={player.user_id} 
+                        to={`/player/${player.user_id}`}
+                        className="flex items-center gap-3 bg-neutral-950 p-2.5 rounded-xl border border-neutral-800/50 transition-all hover:bg-neutral-900 hover:border-cyan-500/50 group block"
+                      >
+                        <img src={player.profiles?.avatar_url || "https://api.dicebear.com/7.x/avataaars/svg?seed=fallback"} alt="avatar" className="w-10 h-10 rounded-full border border-neutral-700 object-cover shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-white truncate group-hover:text-cyan-400 transition-colors">
+                            {displayName} 
+                            {player.user_id === tournament.host_id && <span className="ml-2 text-[10px] bg-fuchsia-500/20 text-fuchsia-400 px-1.5 py-0.5 rounded uppercase tracking-wider">Host</span>}
+                          </p>
+                          <p className="text-[10px] text-cyan-500 font-mono truncate">
+                            App ID: {player.profiles?.display_name} | Game ID: {player.in_game_id}
+                          </p>
                         </div>
-                      )}
-                    </Link>
-                  ))
+                        
+                        {isHost && player.user_id !== currentId && tournament.status === "upcoming" && (
+                          <div className="flex gap-1 z-10 relative shrink-0">
+                            <button onClick={(e) => { e.preventDefault(); handleKickPlayer(player.user_id, player.profiles?.display_name); }} className="p-2 bg-neutral-800 text-neutral-400 rounded-lg hover:bg-neutral-700 hover:text-white border border-neutral-700"><UserMinus className="w-4 h-4" /></button>
+                            <button onClick={(e) => { e.preventDefault(); handleNoShowPenalty(player.user_id, player.profiles?.display_name); }} className="p-2 bg-red-900/30 text-red-500 rounded-lg hover:bg-red-600 hover:text-white border border-red-500/20"><Flag className="w-4 h-4" /></button>
+                          </div>
+                        )}
+                      </Link>
+                    )
+                  })
                 )}
               </div>
             </div>
           </div>
 
-          {/* ================= RIGHT COLUMN (CHAT/LOBBY & AI REPORT) ================= */}
           <div className="lg:col-span-2 flex flex-col gap-6">
             
-            {/* MATCH CHAT */}
             {!hasAccess && !isHost ? (
               <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-12 text-center flex flex-col items-center justify-center min-h-[500px]">
                 <Lock className="w-16 h-16 text-cyan-500 mb-6 opacity-20" />
@@ -490,7 +483,6 @@ export function TournamentDetails() {
               </div>
             )}
 
-            {/* 🔥 AI MATCH REPORT (MOVED BELOW CHATBOX) 🔥 */}
             {tournament.ai_stats && (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-indigo-950/30 border-2 border-indigo-500/40 rounded-3xl p-8 shadow-[0_0_30px_rgba(99,102,241,0.1)]">
                 <div className="flex items-center justify-between mb-6 border-b border-indigo-500/30 pb-4">

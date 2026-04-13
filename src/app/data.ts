@@ -104,9 +104,9 @@ export const uploadScreenshot = async (file: File, userId: string) => {
 };
 
 // ==========================================
-// 🔥 SUPERCHARGED GEMINI VISION AI LOGIC 🔥
+// 🔥 SMART AI LOGIC (IN-GAME NAME & ID FOCUSED) 🔥
 // ==========================================
-const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
+const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string, expectedPlayerList: string) => {
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
     if (!apiKey) throw new Error("API Key missing");
@@ -116,28 +116,30 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
     const reader = new FileReader();
     
     const base64Data = await new Promise<string>((resolve) => {
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        resolve(result.split(',')[1]); 
-      };
+      reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
       reader.readAsDataURL(blob);
     });
 
+    // 🔥 THE FIX: Give AI the exact In-Game Names and IDs to map against
     const promptText = `
-      You are an expert eSports AI referee. Analyze this match result screenshot for the game "${gameName}".
+      You are an expert eSports AI referee analyzing a match result screenshot for "${gameName}".
+      
+      REGISTERED LOBBY PLAYERS:
+      ${expectedPlayerList}
+      
       CRITICAL INSTRUCTIONS:
-      1. Look ONLY for exact IN-GAME NAMES (IGNs) or In-Game IDs (which may contain symbols/numbers).
-      2. Extract the winner and the kills/score of every visible player.
-      3. Return ONLY a valid JSON object. DO NOT wrap it in markdown. DO NOT use \`\`\`json.
+      1. Look at the screenshot and figure out who won and how many kills/points players got.
+      2. MATCH EXACTLY: Compare the names/fonts/IDs in the screenshot with the "REGISTERED LOBBY PLAYERS" list above.
+      3. You MUST return the exact "Name" from the list above for the winner and players. DO NOT make up names or use weird font text. Map it to the exact Name from the list.
+      4. Return ONLY a valid JSON object. DO NOT use markdown formatting (\`\`\`json).
       
       Format exactly like this:
       {
-        "winner": "Exact In-Game Name or ID of the winner",
+        "winner": "Exact Name from the list",
         "is_tampered": false,
         "confidence": 95,
         "players": [
-          {"name": "In-Game Name or ID 1", "kills": 5},
-          {"name": "In-Game Name or ID 2", "kills": 2}
+          {"name": "Exact Name from the list", "kills": 5}
         ]
       }
     `;
@@ -146,17 +148,10 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
       contents: [{
         parts: [
           { text: promptText },
-          {
-            inline_data: {
-              mime_type: blob.type,
-              data: base64Data
-            }
-          }
+          { inline_data: { mime_type: blob.type, data: base64Data } }
         ]
       }],
-      generationConfig: {
-        responseMimeType: "application/json",
-      }
+      generationConfig: { responseMimeType: "application/json" }
     };
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
@@ -169,8 +164,9 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
 
     const data = await response.json();
     let rawJson = data.candidates[0].content.parts[0].text;
-    
     rawJson = rawJson.replace(/```json/gi, '').replace(/```/g, '').trim();
+    
+    console.log("[AI] Extracted Data mapped to IN-GAME Names:", rawJson);
     return JSON.parse(rawJson);
 
   } catch (error) {
@@ -181,28 +177,36 @@ const analyzeMatchResultWithAI = async (imageUrl: string, gameName: string) => {
 
 export const completeTournamentMatch = async (tournamentId: string, imageUrl: string, gameName: string = "Unknown Game") => {
   const { error: initialUpdateError } = await supabase
-    .from("tournaments")
-    .update({ status: "verifying", result_image: imageUrl })
-    .eq("id", tournamentId);
+    .from("tournaments").update({ status: "verifying", result_image: imageUrl }).eq("id", tournamentId);
 
   if (initialUpdateError) throw new Error("Failed to initialize match verification.");
 
   try {
-    const aiData = await analyzeMatchResultWithAI(imageUrl, gameName);
+    const { data: tourn } = await supabase.from("tournaments").select("game_id").eq("id", tournamentId).single();
+    let expectedNamesString = "";
+    
+    if (tourn) {
+      const { data: roster } = await supabase.from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
+      if (roster && roster.length > 0) {
+        const userIds = roster.map(r => r.user_id);
+        const { data: linkedGames } = await supabase.from("linked_games").select("in_game_name, in_game_id").eq("game_id", tourn.game_id).in("user_id", userIds);
+        if (linkedGames) {
+          // Send both Name and ID to AI so it has maximum context
+          expectedNamesString = linkedGames.map(lg => `- Name: "${lg.in_game_name}", ID: "${lg.in_game_id}"`).join("\n");
+        }
+      }
+    }
+
+    const aiData = await analyzeMatchResultWithAI(imageUrl, gameName, expectedNamesString);
     
     if (aiData) {
-      const needsReview = aiData.is_tampered || aiData.confidence < 70;
-      const { error: finalUpdateError } = await supabase
-        .from("tournaments")
-        .update({
+      const needsReview = aiData.is_tampered || aiData.confidence < 70 || aiData.winner === "Unknown";
+      await supabase.from("tournaments").update({
           ai_stats: aiData,
           ai_tampering_flag: aiData.is_tampered,
           ai_confidence: aiData.confidence,
           ...(needsReview && { status: "admin_review" })
-        })
-        .eq("id", tournamentId);
-
-      if (finalUpdateError) console.error("Failed to save AI stats to DB", finalUpdateError);
+        }).eq("id", tournamentId);
     }
   } catch (err) {
     console.error("Error during AI processing flow:", err);
@@ -211,42 +215,29 @@ export const completeTournamentMatch = async (tournamentId: string, imageUrl: st
   return true;
 };
 
-// 🔥 CRITICAL FIX: 100% IN-GAME NAME / ID MATCHING 🔥
+// 🔥 EXACT MATCH STATS UPDATER 🔥
 export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   console.log(`[SYS] Starting Stats Sync for Tournament: ${tournamentId}`);
   try {
     const { data: tourn, error: tournError } = await supabase
-      .from("tournaments")
-      .select("game_id, ai_stats")
-      .eq("id", tournamentId)
-      .single();
+      .from("tournaments").select("game_id, ai_stats").eq("id", tournamentId).single();
 
-    if (tournError || !tourn) {
-      console.error("[SYS] Error finding tournament:", tournError);
-      return;
-    }
+    if (tournError || !tourn) return;
 
     const gameId = tourn.game_id;
     const aiStats = tourn.ai_stats || {}; 
     const hasAIStats = aiStats && Object.keys(aiStats).length > 0;
 
-    const { data: roster, error: rosterError } = await supabase
-      .from("tournament_participants")
-      .select("user_id")
-      .eq("tournament_id", tournamentId);
+    const { data: roster } = await supabase
+      .from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
 
-    if (rosterError || !roster || roster.length === 0) return;
+    if (!roster || roster.length === 0) return;
 
     const userIds = roster.map(r => r.user_id);
-    
-    // Fetch ONLY Linked Game Profiles (Not the App User Profile)
     const { data: linkedGames, error: lgError } = await supabase
-      .from("linked_games")
-      .select("*")
-      .eq("game_id", gameId)
-      .in("user_id", userIds);
+      .from("linked_games").select("*").eq("game_id", gameId).in("user_id", userIds);
 
-    if (lgError) return;
+    if (lgError) { console.error("Linked games fetch error:", lgError); return; }
 
     if (linkedGames && linkedGames.length > 0) {
       const cleanString = (str: string) => (str || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
@@ -263,26 +254,21 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
         if (hasAIStats && aiStats.players && Array.isArray(aiStats.players)) {
           const aiPlayerData = aiStats.players.find((p: any) => {
             const aiName = cleanString(p.name);
-            if (!aiName) return false;
-            // STRICT MATCHING: Check if AI found the In-Game Name OR In-Game ID
-            return aiName.includes(cleanLgName) || cleanLgName.includes(aiName) || 
-                   aiName.includes(cleanLgId) || cleanLgId.includes(aiName);
+            return aiName === cleanLgName || aiName.includes(cleanLgName) || cleanLgName.includes(aiName);
           });
-
           if (aiPlayerData) {
             const score = Number(aiPlayerData.score || aiPlayerData.kills);
             if (!isNaN(score)) newKills += score;
           }
         }
 
-        // Checking Winner against IN-GAME NAME / ID
-        if (hasAIStats && aiWinner && (aiWinner.includes(cleanLgName) || cleanLgName.includes(aiWinner) || aiWinner.includes(cleanLgId) || cleanLgId.includes(aiWinner))) {
+        if (hasAIStats && aiWinner && (aiWinner === cleanLgName || aiWinner.includes(cleanLgName) || cleanLgName.includes(aiWinner))) {
           newWins += 1;
         }
 
-        // Apply Database Update
-        await supabase.from("linked_games").update({ matches_played: newMatches, kills: newKills, wins: newWins }).eq("id", lg.id);
-        console.log(`[SYS] Updated Profile for In-Game Name: ${lg.in_game_name} -> Kills: ${newKills}, Wins: ${newWins}`);
+        const { error: updateError } = await supabase.from("linked_games").update({ matches_played: newMatches, kills: newKills, wins: newWins }).eq("id", lg.id);
+        if (updateError) console.error(`[SYS] Failed to update stats for ${lg.in_game_name}:`, updateError);
+        else console.log(`[SYS] Updated Profile: ${lg.in_game_name} -> Kills: ${newKills}, Wins: ${newWins}`);
       }
     }
   } catch (error) {
@@ -290,6 +276,7 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   }
 };
 
+// ... REST OF THE FUNCTIONS REMAIN UNCHANGED ...
 export const createTournament = async (formData: any, _token: string, userId: string) => {
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).single();
   if (profile?.is_banned === true) throw new Error("🚨 BANNED: Your account has been suspended.");
@@ -458,7 +445,6 @@ export const submitMatchVote = async (tournamentId: string, userId: string, isAp
       }
     }
   }
-
   return true;
 };
 
@@ -490,7 +476,6 @@ export const resolveDisputeAdmin = async (tournamentId: string, hostId: string, 
   if (hostWins) {
     const { error } = await supabase.from("tournaments").update({ status: "completed" }).eq("id", tournamentId);
     if (error) throw error;
-    // 🔥 ADMIN DASHBOARD FIX: Trigger stat apply here! 🔥
     await applyMatchStatsToPlayers(tournamentId);
   } else {
     await supabase.from("tournaments").update({ is_deleted: true, status: "disputed" }).eq("id", tournamentId);
