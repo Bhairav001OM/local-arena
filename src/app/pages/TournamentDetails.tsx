@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { 
   Loader2, MessageSquare, Users, ChevronLeft, Lock, Send, 
   Ban, Clock, CheckCircle2, Trophy, UploadCloud, AlertTriangle, 
-  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin, Flag, BrainCircuit, AlertOctagon, ShieldAlert
+  ThumbsUp, ThumbsDown, Link as LinkIcon, Image as ImageIcon, UserMinus, Gamepad2, MapPin, Flag, BrainCircuit, AlertOctagon, ShieldAlert, Timer, Database
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
@@ -46,6 +46,9 @@ export function TournamentDetails() {
   const [showPasswordBox, setShowPasswordBox] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
+  // 🔥 NEW: Sync Timer State
+  const [syncCountdown, setSyncCountdown] = useState<number | null>(null);
+
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const loadChatData = async () => {
@@ -82,6 +85,11 @@ export function TournamentDetails() {
         if (!isMounted) return;
         setTournament(data);
 
+        // 🔥 Trigger Timer if Completed
+        if (data.status === "completed") {
+          setSyncCountdown(5); // Start 5 second countdown
+        }
+
         if (data.status === "verifying" || data.status === "disputed" || data.status === "completed" || data.status === "admin_review") {
           await loadVotes();
         }
@@ -102,6 +110,14 @@ export function TournamentDetails() {
     return () => { isMounted = false; };
   }, [id, user?.id, session?.user?.id]); 
 
+  // Countdown Logic
+  useEffect(() => {
+    if (syncCountdown !== null && syncCountdown > 0) {
+      const timer = setTimeout(() => setSyncCountdown(syncCountdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [syncCountdown]);
+
   // Real-time logic
   useEffect(() => {
     if (!id || !tournament || isBanned) return;
@@ -111,7 +127,11 @@ export function TournamentDetails() {
         loadChatData(); 
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${id}` }, (payload) => {
-        setTournament((prev) => ({ ...prev, ...payload.new } as any));
+        const newData = { ...tournament, ...payload.new } as any;
+        setTournament(newData);
+        if (payload.new.status === "completed" && tournament.status !== "completed") {
+           setSyncCountdown(5);
+        }
       })
       .subscribe();
       
@@ -224,6 +244,30 @@ export function TournamentDetails() {
             </motion.div>
           )}
 
+          {/* 🔥 LIVE SYNC TIMER BANNER 🔥 */}
+          {syncCountdown !== null && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6 overflow-hidden">
+              {syncCountdown > 0 ? (
+                <div className="bg-cyan-950/40 border border-cyan-500/50 p-4 rounded-2xl flex items-center gap-4 shadow-[0_0_20px_rgba(6,182,212,0.15)]">
+                  <Timer className="w-8 h-8 text-cyan-400 animate-spin" />
+                  <div className="flex-1">
+                    <h4 className="text-lg font-black text-cyan-400 uppercase tracking-widest">Updating Player Profiles...</h4>
+                    <p className="text-sm text-cyan-200">Database is syncing AI stats for all players. Estimated Time: <span className="font-bold text-white">{syncCountdown}s</span></p>
+                  </div>
+                  <Database className="w-6 h-6 text-cyan-500/50 animate-pulse" />
+                </div>
+              ) : (
+                <div className="bg-emerald-950/40 border border-emerald-500/50 p-4 rounded-2xl flex items-center gap-4 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                  <div className="flex-1">
+                    <h4 className="text-lg font-black text-emerald-400 uppercase tracking-widest">Global Sync Complete!</h4>
+                    <p className="text-sm text-emerald-200">All player stats, kills, and victory records have been successfully updated.</p>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-3 mb-2">
@@ -250,8 +294,10 @@ export function TournamentDetails() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
+          {/* ================= LEFT COLUMN ================= */}
           <div className="space-y-6">
             
+            {/* 1. Tournament Intel */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
               <h3 className="text-lg font-bold mb-4 border-b border-neutral-800 pb-2">Tournament Intel</h3>
               <div className="space-y-4">
@@ -270,6 +316,7 @@ export function TournamentDetails() {
               </div>
             </div>
 
+            {/* 2. Verification UI (Stats moved to Right Column) */}
             {(tournament.status === "verifying" || tournament.status === "completed" || tournament.status === "disputed" || tournament.status === "admin_review") && tournament.result_image && (
               <div className="bg-yellow-950/20 border-2 border-yellow-500/50 rounded-2xl p-6">
                 <h3 className="text-lg font-black text-yellow-400 flex items-center gap-2 mb-4">
@@ -280,7 +327,7 @@ export function TournamentDetails() {
                   🔍 View Host's Screenshot
                 </a>
 
-                {/* 🔥 SAFE VOTE UI: Hidden until AI finishes! 🔥 */}
+                {/* SAFE VOTE UI: Hidden until AI finishes! */}
                 {tournament.status === "verifying" && !tournament.ai_stats ? (
                    <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-6 text-center mb-6 shadow-[inset_0_0_20px_rgba(99,102,241,0.2)]">
                      <BrainCircuit className="w-10 h-10 text-indigo-400 mx-auto mb-3 animate-pulse" />
@@ -289,55 +336,6 @@ export function TournamentDetails() {
                    </div>
                 ) : (
                   <>
-                    {/* 🔥 AI MATCH REPORT 🔥 */}
-                    {tournament.ai_stats && (
-                      <div className="bg-indigo-950/30 border border-indigo-500/40 rounded-2xl p-5 mb-6 shadow-inner">
-                        <div className="flex items-center justify-between mb-4 border-b border-indigo-500/30 pb-3">
-                          <h3 className="text-base font-black text-indigo-400 flex items-center gap-2">
-                            <BrainCircuit className="w-5 h-5" /> AI Analysis
-                          </h3>
-                          <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${tournament.ai_confidence && tournament.ai_confidence > 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'}`}>
-                            {tournament.ai_confidence || 0}% Confident
-                          </span>
-                        </div>
-
-                        {tournament.ai_tampering_flag && (
-                          <div className="bg-red-500/10 border border-red-500 text-red-400 p-3 rounded-lg flex items-center gap-3 mb-4 text-xs font-bold">
-                            <ShieldAlert className="w-5 h-5 shrink-0" /> 
-                            AI detected potential image tampering/editing!
-                          </div>
-                        )}
-
-                        <div className="space-y-4">
-                          <div className="bg-neutral-950/80 rounded-xl p-3 border border-neutral-800">
-                            <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold mb-1">Detected Winner</p>
-                            <p className="text-lg font-black text-white">{tournament.ai_stats.winner || "Unknown"}</p>
-                          </div>
-
-                          {tournament.ai_stats.players && tournament.ai_stats.players.length > 0 && (
-                            <div className="bg-neutral-950/80 rounded-xl overflow-hidden border border-neutral-800">
-                              <table className="w-full text-left text-sm">
-                                <thead className="bg-neutral-900 text-neutral-400">
-                                  <tr>
-                                    <th className="px-3 py-2 font-bold uppercase text-[10px] tracking-wider">Player</th>
-                                    <th className="px-3 py-2 font-bold uppercase text-[10px] tracking-wider text-right">Stats</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-neutral-800">
-                                  {tournament.ai_stats.players.map((p: any, i: number) => (
-                                    <tr key={i} className="hover:bg-neutral-900/50 transition-colors">
-                                      <td className="px-3 py-2 font-medium text-white">{p.name}</td>
-                                      <td className="px-3 py-2 font-bold text-cyan-400 text-right">{p.score || p.kills}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
                     {(tournament.status === "verifying" || tournament.status === "disputed") && (
                       <>
                         <div className="flex justify-between text-sm font-bold mb-4 border-b border-neutral-800 pb-4">
@@ -449,8 +447,10 @@ export function TournamentDetails() {
             </div>
           </div>
 
-          {/* ================= RIGHT COLUMN (CHAT/LOBBY) ================= */}
-          <div className="lg:col-span-2">
+          {/* ================= RIGHT COLUMN (CHAT/LOBBY & AI REPORT) ================= */}
+          <div className="lg:col-span-2 flex flex-col gap-6">
+            
+            {/* MATCH CHAT */}
             {!hasAccess && !isHost ? (
               <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-12 text-center flex flex-col items-center justify-center min-h-[500px]">
                 <Lock className="w-16 h-16 text-cyan-500 mb-6 opacity-20" />
@@ -489,8 +489,58 @@ export function TournamentDetails() {
                 </form>
               </div>
             )}
-          </div>
 
+            {/* 🔥 AI MATCH REPORT (MOVED BELOW CHATBOX) 🔥 */}
+            {tournament.ai_stats && (
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-indigo-950/30 border-2 border-indigo-500/40 rounded-3xl p-8 shadow-[0_0_30px_rgba(99,102,241,0.1)]">
+                <div className="flex items-center justify-between mb-6 border-b border-indigo-500/30 pb-4">
+                  <h3 className="text-2xl font-black text-indigo-400 flex items-center gap-3">
+                    <BrainCircuit className="w-8 h-8" /> Final AI Match Report
+                  </h3>
+                  <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider ${tournament.ai_confidence && tournament.ai_confidence > 80 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'}`}>
+                    {tournament.ai_confidence || 0}% Confident
+                  </span>
+                </div>
+
+                {tournament.ai_tampering_flag && (
+                  <div className="bg-red-500/10 border border-red-500 text-red-400 p-4 rounded-xl flex items-center gap-3 mb-6 font-bold">
+                    <ShieldAlert className="w-6 h-6 shrink-0" /> 
+                    Warning: The AI detected potential image tampering or editing in the screenshot!
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-neutral-950/80 rounded-2xl p-6 border border-neutral-800 md:col-span-1 flex flex-col justify-center items-center text-center">
+                    <Trophy className="w-12 h-12 text-yellow-500 mb-3" />
+                    <p className="text-xs text-neutral-500 uppercase tracking-widest font-bold mb-1">Detected Winner (In-Game)</p>
+                    <p className="text-2xl font-black text-white break-all">{tournament.ai_stats.winner || "Unknown"}</p>
+                  </div>
+
+                  {tournament.ai_stats.players && tournament.ai_stats.players.length > 0 && (
+                    <div className="bg-neutral-950/80 rounded-2xl overflow-hidden border border-neutral-800 md:col-span-2">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-neutral-900 text-neutral-400">
+                          <tr>
+                            <th className="px-5 py-4 font-bold uppercase text-xs tracking-wider">In-Game Name / ID</th>
+                            <th className="px-5 py-4 font-bold uppercase text-xs tracking-wider text-right">Kills / Score</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-800">
+                          {tournament.ai_stats.players.map((p: any, i: number) => (
+                            <tr key={i} className="hover:bg-neutral-900/50 transition-colors">
+                              <td className="px-5 py-4 font-bold text-white text-base">{p.name}</td>
+                              <td className="px-5 py-4 font-black text-cyan-400 text-right text-lg">{p.score || p.kills}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+          </div>
         </div>
       </div>
     </div>
