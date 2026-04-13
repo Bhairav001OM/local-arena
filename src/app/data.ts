@@ -269,27 +269,45 @@ export const reRunAIVerification = async (tournamentId: string, imageUrl: string
   return true;
 };
 
+// 🔥 CRITICAL FIX: BULLETPROOF STATS UPDATER 🔥
 export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   console.log(`[SYS] Starting Stats Sync for Tournament: ${tournamentId}`);
   try {
+    // 🔥 FIX: Select * to prevent crash if 'mode' column doesn't exist yet
     const { data: tourn, error: tournError } = await supabase
-      .from("tournaments").select("game_id, mode, ai_stats").eq("id", tournamentId).single();
+      .from("tournaments").select("*").eq("id", tournamentId).single();
 
-    if (tournError || !tourn) return;
+    if (tournError || !tourn) {
+      console.error("[SYS] Failed to fetch tournament details:", tournError);
+      return;
+    }
 
-    const gameId = tourn.game_id;
-    const gameMode = tourn.mode || "Unranked"; 
+    const gameId = tourn.game_id || tourn.gameId;
+    // 🔥 FIX: Fallback to "Global" directly so it matches the Profile UI tab
+    const gameMode = tourn.mode || "Global"; 
     const aiStats = tourn.ai_stats || {}; 
     const hasAIStats = aiStats && Object.keys(aiStats).length > 0;
 
-    const { data: roster } = await supabase
+    console.log(`[SYS] Target GameID: ${gameId} | Target Mode: ${gameMode}`);
+
+    const { data: roster, error: rosterError } = await supabase
       .from("tournament_participants").select("user_id").eq("tournament_id", tournamentId);
 
-    if (!roster || roster.length === 0) return;
+    if (rosterError || !roster || roster.length === 0) {
+      console.error("[SYS] Roster empty or fetch error:", rosterError);
+      return;
+    }
 
     const userIds = roster.map(r => r.user_id);
-    const { data: linkedGames } = await supabase
+    const { data: linkedGames, error: lgError } = await supabase
       .from("linked_games").select("*").eq("game_id", gameId).in("user_id", userIds);
+
+    if (lgError) { 
+      console.error("[SYS] Linked games fetch error:", lgError); 
+      return; 
+    }
+
+    console.log(`[SYS] Found ${linkedGames?.length || 0} linked accounts for this match.`);
 
     if (linkedGames && linkedGames.length > 0) {
       const cleanString = (str: string) => (str || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
@@ -321,10 +339,15 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
           isWinner = true;
         }
 
-        const { data: currentStats } = await supabase.from('player_stats')
+        console.log(`[SYS] Processing stats for ${lg.in_game_name}... Kills: ${matchKills}, Win: ${isWinner}`);
+
+        // UPSERT STATS TO PLAYER_STATS UNIVERSAL TABLE
+        const { data: currentStats, error: fetchStatError } = await supabase.from('player_stats')
           .select('*')
           .match({ user_id: lg.user_id, game_id: gameId, game_mode: gameMode })
           .maybeSingle();
+
+        if (fetchStatError) console.error(`[SYS] Error checking existing stats for ${lg.in_game_name}:`, fetchStatError);
 
         const newMatches = (currentStats?.matches_played || 0) + 1;
         const newWins = (currentStats?.wins || 0) + (isWinner ? 1 : 0);
@@ -334,19 +357,26 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
         const newDamage = (currentStats?.damage || 0) + matchDamage;
 
         if (currentStats) {
-          await supabase.from('player_stats').update({
+          const { error: updateError } = await supabase.from('player_stats').update({
             matches_played: newMatches, wins: newWins, kills: newKills, deaths: newDeaths, assists: newAssists, damage: newDamage
           }).eq('id', currentStats.id);
+          
+          if (updateError) console.error(`[SYS] ❌ Failed to UPDATE stats for ${lg.in_game_name}:`, updateError);
+          else console.log(`[SYS] ✅ Successfully UPDATED stats for ${lg.in_game_name} in mode ${gameMode}`);
         } else {
-          await supabase.from('player_stats').insert({
+          const { error: insertError } = await supabase.from('player_stats').insert({
             user_id: lg.user_id, game_id: gameId, game_mode: gameMode,
             matches_played: newMatches, wins: newWins, kills: newKills, deaths: newDeaths, assists: newAssists, damage: newDamage
           });
+          
+          if (insertError) console.error(`[SYS] ❌ Failed to INSERT stats for ${lg.in_game_name}:`, insertError);
+          else console.log(`[SYS] ✅ Successfully INSERTED stats for ${lg.in_game_name} in mode ${gameMode}`);
         }
-        console.log(`[SYS] Profile Updated in Database for ${lg.in_game_name}`);
       }
     }
-  } catch (error) { console.error("[SYS] Critical error in stat application:", error); }
+  } catch (error) { 
+    console.error("[SYS] Critical error in stat application:", error); 
+  }
 };
 
 export const createTournament = async (formData: any, _token: string, userId: string) => {
@@ -521,6 +551,7 @@ export const submitMatchVote = async (tournamentId: string, userId: string, isAp
       }
     }
   }
+
   return true;
 };
 
