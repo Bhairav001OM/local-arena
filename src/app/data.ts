@@ -269,11 +269,9 @@ export const reRunAIVerification = async (tournamentId: string, imageUrl: string
   return true;
 };
 
-// 🔥 CRITICAL FIX: BULLETPROOF STATS UPDATER 🔥
 export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   console.log(`[SYS] Starting Stats Sync for Tournament: ${tournamentId}`);
   try {
-    // 🔥 FIX: Select * to prevent crash if 'mode' column doesn't exist yet
     const { data: tourn, error: tournError } = await supabase
       .from("tournaments").select("*").eq("id", tournamentId).single();
 
@@ -283,7 +281,6 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
     }
 
     const gameId = tourn.game_id || tourn.gameId;
-    // 🔥 FIX: Fallback to "Global" directly so it matches the Profile UI tab
     const gameMode = tourn.mode || "Global"; 
     const aiStats = tourn.ai_stats || {}; 
     const hasAIStats = aiStats && Object.keys(aiStats).length > 0;
@@ -306,8 +303,6 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
       console.error("[SYS] Linked games fetch error:", lgError); 
       return; 
     }
-
-    console.log(`[SYS] Found ${linkedGames?.length || 0} linked accounts for this match.`);
 
     if (linkedGames && linkedGames.length > 0) {
       const cleanString = (str: string) => (str || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
@@ -339,9 +334,6 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
           isWinner = true;
         }
 
-        console.log(`[SYS] Processing stats for ${lg.in_game_name}... Kills: ${matchKills}, Win: ${isWinner}`);
-
-        // UPSERT STATS TO PLAYER_STATS UNIVERSAL TABLE
         const { data: currentStats, error: fetchStatError } = await supabase.from('player_stats')
           .select('*')
           .match({ user_id: lg.user_id, game_id: gameId, game_mode: gameMode })
@@ -377,6 +369,35 @@ export const applyMatchStatsToPlayers = async (tournamentId: string) => {
   } catch (error) { 
     console.error("[SYS] Critical error in stat application:", error); 
   }
+};
+
+// 🔥 NEW: FETCH SPECIFIC MATCH HISTORY FOR A GAME 🔥
+export const fetchGameMatchHistory = async (userId: string, gameId: string) => {
+  const { data: participants, error: pErr } = await supabase
+    .from("tournament_participants")
+    .select("tournament_id")
+    .eq("user_id", userId);
+    
+  if (pErr || !participants || participants.length === 0) return [];
+  
+  const tIds = participants.map(p => p.tournament_id);
+  
+  const { data: tournaments, error: tErr } = await supabase
+    .from("tournaments")
+    .select("*")
+    .in("id", tIds)
+    .eq("game_id", gameId)
+    .eq("status", "completed")
+    .order("date", { ascending: false });
+    
+  if (tErr || !tournaments) return [];
+  
+  const gameMap = await fetchGameTitleMap();
+  return tournaments.map(t => {
+    const mapped = mapTournamentData(t);
+    mapped.gameName = gameMap[mapped.gameId] || "Unknown Game";
+    return mapped;
+  });
 };
 
 export const createTournament = async (formData: any, _token: string, userId: string) => {
@@ -551,7 +572,6 @@ export const submitMatchVote = async (tournamentId: string, userId: string, isAp
       }
     }
   }
-
   return true;
 };
 

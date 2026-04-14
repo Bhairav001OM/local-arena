@@ -8,6 +8,7 @@ import { TournamentDetails } from "./app/pages/TournamentDetails";
 import { Admin } from "./app/pages/Admin";
 import { Inbox } from "./app/pages/Inbox";
 import { PublicProfile } from "./app/pages/PublicProfile";
+import { GameProfile } from "./app/pages/GameProfile";
 // git check
   
 
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/admin" element={<Admin />} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="player/:id" element={<PublicProfile />} />
+          <Route path="/player/:userId/game/:gameId" element={<GameProfile />} />
         </Route>
       </Routes>
     </BrowserRouter>

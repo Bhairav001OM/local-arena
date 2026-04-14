@@ -10,13 +10,12 @@ import {
 } from "../data"; 
 import { 
   ShieldAlert, Gamepad2, AlertCircle, CheckCircle2, Loader2, Save, Edit2, 
-  Swords, Crown, Calendar, Play, ExternalLink, Copy, Check, Flag, Skull, Trophy 
+  Swords, Crown, Calendar, Play, ExternalLink, Copy, Check, Flag, Skull, Trophy, LineChart 
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import { supabase } from "../../utils/supabase"; 
 
-// 🔥 FIX: No 'export' here to prevent Vite Fast Refresh crash
 const generateFriendCode = (uuid: string) => {
   if (!uuid) return "";
   return parseInt(uuid.split('-')[0], 16).toString().padStart(10, '0');
@@ -28,7 +27,7 @@ export function Profile() {
   // Base Profile State
   const [profile, setProfile] = useState<any>(null);
   const [linkedGames, setLinkedGames] = useState<any[]>([]);
-  const [playerStats, setPlayerStats] = useState<any[]>([]); // 🔥 NEW: For dynamic stats
+  const [playerStats, setPlayerStats] = useState<any[]>([]); 
   const [platformGames, setPlatformGames] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -46,7 +45,7 @@ export function Profile() {
   const [inGameName, setInGameName] = useState("");
   const [preferredModes, setPreferredModes] = useState<string[]>([]);
   
-  // 🔥 NEW: State to track which mode tab is active per game
+  // Mode Tabs State
   const [selectedModeView, setSelectedModeView] = useState<Record<string, string>>({});
   
   const [isSaving, setIsSaving] = useState(false);
@@ -65,7 +64,7 @@ export function Profile() {
       const data = await getUserProfile(user.id);
       setProfile(data?.profile || null);
       setLinkedGames(data?.linkedGames || []);
-      setPlayerStats(data?.playerStats || []); // Fetch fresh stats
+      setPlayerStats(data?.playerStats || []);
 
       const dashboardData = await fetchFullUserProfile(user.id);
       setEnhancedData(dashboardData);
@@ -90,7 +89,7 @@ export function Profile() {
   useEffect(() => {
     loadData();
 
-    // 🚨 NUCLEAR OPTION: Force the spinner off after 3 seconds
+    // Force the spinner off after 3 seconds
     const safetyKillSwitch = setTimeout(() => {
       setIsLoading(false);
     }, 3000);
@@ -109,7 +108,7 @@ export function Profile() {
     
     try {
       await saveLinkedGame(user!.id, gameId, inGameId, inGameName, preferredModes);
-      await loadData(); // Reload to update UI
+      await loadData(); 
       setEditingGame(null);
       setIsAddingNewGame(false);
       setSelectedGameToAdd("");
@@ -321,7 +320,7 @@ export function Profile() {
         )}
 
         {/* =========================================
-            SECTION 2: LINKED GAMES (UNIVERSAL MODES)
+            SECTION 2: LINKED GAMES
             ========================================= */}
         <div>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -330,7 +329,7 @@ export function Profile() {
                 <Gamepad2 className="w-6 h-6 text-cyan-400" /> Linked Game Accounts
               </h2>
               <p className="text-neutral-400 text-sm mt-1">
-                Link your exact in-game ID and select your preferred modes.
+                Link your exact in-game ID and track your Mode-Wise stats.
               </p>
             </div>
             
@@ -420,14 +419,13 @@ export function Profile() {
               <p className="text-neutral-500 text-sm">Add a game above to start tracking your stats and joining tournaments.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {linkedGames.map((linkedData) => {
                 const game = platformGames.find(g => g.id === linkedData.game_id);
                 if (!game) return null; 
                 
                 const isEditing = editingGame === game.id;
                 
-                // 🔥 UNIVERSAL MODE TABS LOGIC 🔥
                 const gameModes = ["Global", ...(game.official_modes || [])];
                 const activeMode = selectedModeView[game.id] || "Global";
                 
@@ -503,7 +501,7 @@ export function Profile() {
                             <p className="font-mono text-cyan-400 break-all">{linkedData.in_game_id}</p>
                           </div>
 
-                          {/* 🔥 DYNAMIC MODE TABS UI 🔥 */}
+                          {/* MODE TABS */}
                           <div className="bg-neutral-950 p-2 rounded-xl border border-neutral-800 flex overflow-x-auto custom-scrollbar mb-4 gap-2">
                             {gameModes.map((mode: string) => (
                               <button 
@@ -520,7 +518,6 @@ export function Profile() {
                             ))}
                           </div>
 
-                          {/* 🔥 STATS GRID FOR SELECTED MODE 🔥 */}
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <div className="bg-neutral-950 rounded-xl p-3 border border-neutral-800 flex flex-col items-center justify-center">
                               <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1">Matches</p>
@@ -556,6 +553,15 @@ export function Profile() {
                               </div>
                             </div>
                           )}
+
+                          {/* 🔥 NEW: VIEW DETAILED HISTORY BUTTON 🔥 */}
+                          <Link 
+                            to={`/player/${user.id}/game/${game.id}`} 
+                            className="mt-4 w-full py-3 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 hover:text-indigo-300 rounded-xl font-bold transition-all flex justify-center items-center gap-2"
+                          >
+                            <LineChart className="w-4 h-4" /> View Detailed History
+                          </Link>
+
                         </div>
                       )}
                     </div>
@@ -617,6 +623,7 @@ export function Profile() {
               <Crown className="w-6 h-6 text-fuchsia-400" /> Career Dashboard
             </h2>
             
+            {/* Tab Navigation */}
             <div className="flex gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800 w-full md:w-auto">
               <button
                 onClick={() => setActiveTab("player")}
