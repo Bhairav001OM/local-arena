@@ -49,16 +49,8 @@ export function Profile() {
   // Mode Tabs State
   const [selectedModeView, setSelectedModeView] = useState<Record<string, string>>({});
   
-  // 🔥 MOBILE SWIPE STACK STATE 🔥
-  const [[page, direction], setPage] = useState([0, 0]);
-  const activeGameIndex = page;
-
-  const paginate = (newDirection: number) => {
-    let newIndex = activeGameIndex + newDirection;
-    if (newIndex < 0) newIndex = linkedGames.length - 1; // Wrap to end
-    if (newIndex >= linkedGames.length) newIndex = 0; // Wrap to start
-    setPage([newIndex, newDirection]);
-  };
+  // 🔥 MOBILE SWIPE STACK STATE (FIXED) 🔥
+  const [activeGameIndex, setActiveGameIndex] = useState(0);
   
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -100,9 +92,12 @@ export function Profile() {
 
   useEffect(() => {
     loadData();
+
+    // Force the spinner off after 3 seconds
     const safetyKillSwitch = setTimeout(() => {
       setIsLoading(false);
     }, 3000);
+
     return () => clearTimeout(safetyKillSwitch);
   }, [user]);
 
@@ -122,8 +117,7 @@ export function Profile() {
       setIsAddingNewGame(false);
       setSelectedGameToAdd("");
       setPreferredModes([]);
-      // Reset mobile carousel to first slide on new add
-      setPage([0, 0]);
+      setActiveGameIndex(0); // Reset index on new game add
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to save game ID.");
     } finally {
@@ -602,17 +596,23 @@ export function Profile() {
                 })}
               </div>
 
-              {/* 🔥 MOBILE SWIPE STACK VIEW (Hidden on Desktop) 🔥 */}
+              {/* 🔥 MOBILE SWIPE STACK VIEW (FIXED) 🔥 */}
               <div className="block md:hidden w-full overflow-hidden py-4 relative">
                 <motion.div 
                   className="flex cursor-grab active:cursor-grabbing"
                   drag="x"
                   dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={0.2}
-                  onDragEnd={(e, { offset, velocity }) => {
+                  dragElastic={0.1}
+                  onDragEnd={(e, { offset }) => {
                     const swipeThreshold = 50;
-                    if (offset.x < -swipeThreshold) paginate(1); // Swipe Left -> Next
-                    else if (offset.x > swipeThreshold) paginate(-1); // Swipe Right -> Prev
+                    // Swipe Left (Next)
+                    if (offset.x < -swipeThreshold && activeGameIndex < linkedGames.length - 1) {
+                      setActiveGameIndex(activeGameIndex + 1);
+                    } 
+                    // Swipe Right (Prev)
+                    else if (offset.x > swipeThreshold && activeGameIndex > 0) {
+                      setActiveGameIndex(activeGameIndex - 1);
+                    }
                   }}
                   animate={{ x: `-${activeGameIndex * 100}%` }}
                   transition={{ type: "spring", stiffness: 300, damping: 30 }}
@@ -643,8 +643,8 @@ export function Profile() {
                         key={game.id} 
                         className="w-full shrink-0 px-2"
                         animate={{ 
-                          scale: index === activeGameIndex ? 1 : 0.9, 
-                          opacity: index === activeGameIndex ? 1 : 0.4 
+                          scale: index === activeGameIndex ? 1 : 0.95, 
+                          opacity: index === activeGameIndex ? 1 : 0.5 
                         }}
                         transition={{ duration: 0.3 }}
                       >
@@ -800,7 +800,7 @@ export function Profile() {
                     {linkedGames.map((_, idx) => (
                       <button 
                         key={idx} 
-                        onClick={() => setPage([idx, idx > activeGameIndex ? 1 : -1])} 
+                        onClick={() => setActiveGameIndex(idx)} 
                         className={`h-2 rounded-full transition-all duration-300 ${idx === activeGameIndex ? 'w-8 bg-cyan-500' : 'w-2 bg-neutral-700'}`}
                       />
                     ))}
