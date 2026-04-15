@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "../../utils/supabase";
 import { fetchGameMatchHistory, getUserProfile } from "../data";
-import { Loader2, ChevronLeft, Gamepad2, Trophy, Skull, ShieldAlert, LineChart, Target } from "lucide-react";
+import { Loader2, ChevronLeft, Gamepad2, Trophy, Skull, ShieldAlert, LineChart, Target, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export function GameProfile() {
@@ -16,6 +16,8 @@ export function GameProfile() {
   const [matchHistory, setMatchHistory] = useState<any[]>([]);
   
   const [activeMode, setActiveMode] = useState<string>("Global");
+  // 🔥 NEW: Search Query State 🔥
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -24,7 +26,6 @@ export function GameProfile() {
       setIsLoading(true);
       
       try {
-        // 1. Fetch User Data
         const userData = await getUserProfile(userId);
         if (!isMounted) return;
         
@@ -33,11 +34,9 @@ export function GameProfile() {
         setLinkedGame(lg);
         setPlayerStats(userData.playerStats.filter((s: any) => s.game_id === gameId));
 
-        // 2. Fetch Game Info
         const { data: gInfo } = await supabase.from('games').select('*').eq('id', gameId).single();
         if (gInfo) setGameInfo(gInfo);
 
-        // 3. Fetch Specific Match History
         const history = await fetchGameMatchHistory(userId, gameId);
         setMatchHistory(history);
 
@@ -55,7 +54,6 @@ export function GameProfile() {
   if (isLoading) return <div className="min-h-screen bg-neutral-950 flex justify-center items-center"><Loader2 className="w-12 h-12 text-fuchsia-500 animate-spin" /></div>;
   if (!profile || !linkedGame) return <div className="min-h-screen bg-neutral-950 flex flex-col justify-center items-center text-white"><ShieldAlert className="w-16 h-16 text-neutral-600 mb-4" /><h2 className="text-xl font-bold">Game Profile Not Found.</h2><Link to="/profile" className="text-cyan-500 mt-4">Go Back</Link></div>;
 
-  // Aggregate Stats based on Mode
   let modeStats = { matches_played: 0, wins: 0, kills: 0, deaths: 0, assists: 0, damage: 0 };
   if (activeMode === "Global") {
     playerStats.forEach(s => {
@@ -68,6 +66,17 @@ export function GameProfile() {
 
   // Filter Match History based on Mode
   const filteredHistory = activeMode === "Global" ? matchHistory : matchHistory.filter(m => m.mode === activeMode);
+  
+  // 🔥 NEW: Apply Search Filter on top of Mode Filter 🔥
+  const searchedHistory = filteredHistory.filter(match => {
+    const query = searchQuery.toLowerCase();
+    return (
+      match.title?.toLowerCase().includes(query) ||
+      match.id?.toLowerCase().includes(query) ||
+      match.short_code?.toLowerCase().includes(query)
+    );
+  });
+
   const gameModes = ["Global", ...(gameInfo?.official_modes || [])];
 
   return (
@@ -102,7 +111,7 @@ export function GameProfile() {
         <div className="bg-neutral-900 p-2 rounded-2xl border border-neutral-800 flex overflow-x-auto custom-scrollbar gap-2">
           {gameModes.map((mode: string) => (
             <button 
-              key={mode} onClick={() => setActiveMode(mode)}
+              key={mode} onClick={() => { setActiveMode(mode); setSearchQuery(""); }}
               className={`px-5 py-3 text-sm font-bold rounded-xl transition-all whitespace-nowrap ${
                 activeMode === mode ? "bg-cyan-600 text-white shadow-lg shadow-cyan-500/20" : "text-neutral-400 hover:text-white hover:bg-neutral-800"
               }`}
@@ -122,17 +131,35 @@ export function GameProfile() {
 
         {/* MATCH HISTORY LIST */}
         <div className="space-y-4 pt-4">
-          <h2 className="text-xl font-bold flex items-center gap-2 mb-6"><LineChart className="w-5 h-5 text-cyan-400"/> Match History ({activeMode})</h2>
+          {/* 🔥 NEW: History Header with Search Bar 🔥 */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <LineChart className="w-5 h-5 text-cyan-400"/> Match History ({activeMode})
+            </h2>
+            
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+              <input 
+                type="text" 
+                placeholder="Search Title or ID..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors"
+              />
+            </div>
+          </div>
           
           <AnimatePresence>
-            {filteredHistory.length === 0 ? (
+            {searchedHistory.length === 0 ? (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-16 bg-neutral-900/50 border border-neutral-800 border-dashed rounded-3xl">
                 <Skull className="w-12 h-12 text-neutral-600 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-neutral-400 mb-1">No Matches Found</h3>
-                <p className="text-neutral-500 text-sm">Play a {activeMode} match to see it here.</p>
+                <p className="text-neutral-500 text-sm">
+                  {searchQuery ? "No matches match your search." : `Play a ${activeMode} match to see it here.`}
+                </p>
               </motion.div>
             ) : (
-              filteredHistory.map((match) => {
+              searchedHistory.map((match) => {
                 const cleanString = (str: string) => (str || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
                 const cleanLgName = cleanString(linkedGame.in_game_name);
                 
