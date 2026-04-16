@@ -603,7 +603,7 @@ export function Profile() {
                   drag="x"
                   dragConstraints={{ left: 0, right: 0 }}
                   dragElastic={0.1}
-                  onDragEnd={(e, { offset }) => {
+                  onDragEnd={(_e, { offset }) => {
                     const swipeThreshold = 50;
                     // Swipe Left (Next)
                     if (offset.x < -swipeThreshold && activeGameIndex < linkedGames.length - 1) {
