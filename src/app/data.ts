@@ -712,3 +712,62 @@ export const markPlayerNoShow = async (tournamentId: string, playerId: string) =
   if (updateErr) throw updateErr;
   return { isBanned: shouldBan, penalties: newPenalties };
 };
+
+// ==========================================
+// 🔥 GROUP CHAT FUNCTIONS 🔥
+// ==========================================
+
+export const createGroup = async (name: string, creatorId: string, memberIds: string[], avatarUrl: string = "") => {
+  // 1. Create the Group
+  const { data: newGroup, error: groupErr } = await supabase
+    .from('groups')
+    .insert([{ name: name, created_by: creatorId, avatar_url: avatarUrl }])
+    .select().single();
+    
+  if (groupErr) throw groupErr;
+
+  // 2. Add members (Creator as admin + selected friends as members)
+  const membersToInsert = [
+    { group_id: newGroup.id, user_id: creatorId, role: 'admin' },
+    ...memberIds.map(id => ({ group_id: newGroup.id, user_id: id, role: 'member' }))
+  ];
+  
+  const { error: memErr } = await supabase.from('group_members').insert(membersToInsert);
+  if (memErr) throw memErr;
+
+  return newGroup;
+};
+
+export const fetchUserGroups = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('group_members')
+    .select(`
+      group_id,
+      groups ( id, name, avatar_url, created_by, created_at )
+    `)
+    .eq('user_id', userId);
+    
+  if (error) throw error;
+  // Format the data cleanly
+  return data.map((d: any) => d.groups).filter(Boolean);
+};
+
+export const fetchGroupMessages = async (groupId: string) => {
+  const { data, error } = await supabase
+    .from('group_messages')
+    .select(`*, profiles:sender_id (id, display_name, avatar_url)`)
+    .eq('group_id', groupId)
+    .order('created_at', { ascending: true });
+    
+  if (error) throw error;
+  return data || [];
+};
+
+export const sendGroupMessage = async (groupId: string, senderId: string, message: string) => {
+  const { error } = await supabase
+    .from('group_messages')
+    .insert([{ group_id: groupId, sender_id: senderId, message: message }]);
+    
+  if (error) throw error;
+  return true;
+};
