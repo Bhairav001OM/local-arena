@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion"; 
 import { Link } from "react-router-dom"; 
-import { ArrowRight, Trophy, Users, MonitorPlay, Zap, Search, UserPlus, Loader2, MapPin, Navigation, CalendarDays, Clock3, Star, Gamepad2, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Trophy, Users, MonitorPlay, Zap, Search, UserPlus, Loader2, MapPin, Navigation, CalendarDays, Clock3, Star, Gamepad2, CheckCircle2, Bot, Sparkles } from "lucide-react";
 import { type Tournament, fetchTournaments, searchPlayers, sendFriendRequest } from "../data"; 
 import { TournamentCard } from "../components/TournamentCard";
 import { supabase } from "../../utils/supabase"; 
@@ -27,6 +27,29 @@ export function Home() {
   const [selectedSlot, setSelectedSlot] = useState("6:00 PM");
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [activeArenaFilter, setActiveArenaFilter] = useState("Near me");
+  const [agentForm, setAgentForm] = useState({ game: "Valorant", entries: "100", format: "32-player knockout", city: "Mumbai", prizePool: "₹50,000" });
+  const [agentPlan, setAgentPlan] = useState("");
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentError, setAgentError] = useState("");
+
+  const runTournamentTeammate = async () => {
+    setAgentBusy(true);
+    setAgentError("");
+    try {
+      const response = await fetch("/api/tournament-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...agentForm, entries: Number(agentForm.entries) }) });
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("The teammate API is not available in this preview yet. Deploy the project to enable the server-side AI teammate.");
+      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "The teammate could not create a plan.");
+      setAgentPlan(data.plan);
+    } catch (error) {
+      setAgentError(error instanceof Error ? error.message : "Try again in a moment.");
+    } finally {
+      setAgentBusy(false);
+    }
+  };
 
   useEffect(() => {
     // 1. Fetch upcoming tournaments
@@ -279,7 +302,32 @@ export function Home() {
         )}
       </section>
 
-      {/* 4. Community hub */}
+      {/* 4. Autonomous tournament teammate */}
+      <section className="w-full max-w-7xl mt-20 sm:mt-28 px-4 sm:px-6 lg:px-8" aria-labelledby="teammate-heading">
+        <div className="overflow-hidden rounded-3xl border border-cyan-400/20 bg-gradient-to-br from-cyan-950/40 via-neutral-900 to-fuchsia-950/30 p-6 sm:p-10">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-xl">
+              <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300"><Bot className="h-4 w-4" /> Autonomous teammate</p>
+              <h2 id="teammate-heading" className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">Plan your tournament with AI.</h2>
+              <p className="mt-3 text-neutral-300">Describe your event and get an operations plan for entries, brackets, venue timing, and community readiness. Your teammate prepares the plan; you approve every real-world action.</p>
+            </div>
+            <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-black/20 p-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {([['game', 'Game'], ['entries', 'Entries'], ['format', 'Format'], ['city', 'City'], ['prizePool', 'Prize pool']] as const).map(([key, label]) => (
+                  <label key={key} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">{label}
+                    <input value={agentForm[key]} onChange={(event) => setAgentForm({ ...agentForm, [key]: event.target.value })} className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-white outline-none transition-colors focus:border-cyan-400" />
+                  </label>
+                ))}
+              </div>
+              <button type="button" onClick={runTournamentTeammate} disabled={agentBusy} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3 text-sm font-bold text-neutral-950 transition-colors hover:bg-white disabled:cursor-wait disabled:opacity-60"><Sparkles className="h-4 w-4" />{agentBusy ? 'Building tournament plan…' : 'Build autonomous plan'}</button>
+              {agentError && <p className="mt-3 text-sm text-rose-300">{agentError}</p>}
+              {agentPlan && <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-cyan-400/20 bg-neutral-950 p-4 text-left text-xs leading-6 text-cyan-100">{agentPlan}</pre>}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. Community hub */}
       <section className="w-full max-w-7xl mt-20 sm:mt-28 px-4 sm:px-6 lg:px-8" aria-labelledby="community-heading">
         <div className="rounded-3xl border border-fuchsia-500/20 bg-gradient-to-br from-fuchsia-950/30 via-neutral-900 to-cyan-950/20 p-6 sm:p-10">
           <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
