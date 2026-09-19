@@ -7,6 +7,14 @@ import { TournamentCard } from "../components/TournamentCard";
 import { supabase } from "../../utils/supabase"; 
 import { useAuth } from "../context/AuthContext";
 
+type TournamentPlan = {
+  summary: string;
+  checklist: string[];
+  schedule: string[];
+  risks: string[];
+  nextAction: string;
+};
+
 const ARENAS = [
   { id: 1, name: "Pixel District Gaming Lounge", area: "Andheri West", distance: "1.2 km", rating: "4.9", price: "₹120/hr", image: "https://images.unsplash.com/photo-1593305841991-05c297ba4575?auto=format&fit=crop&q=80&w=900", tags: ["PC", "PS5", "24/7"], slots: 8 },
   { id: 2, name: "The Respawn Room", area: "Powai", distance: "3.8 km", rating: "4.8", price: "₹150/hr", image: "https://images.unsplash.com/photo-1547394765-185e1e68f34e?auto=format&fit=crop&q=80&w=900", tags: ["PC", "Sim Racing"], slots: 4 },
@@ -28,7 +36,7 @@ export function Home() {
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [activeArenaFilter, setActiveArenaFilter] = useState("Near me");
   const [agentForm, setAgentForm] = useState({ game: "Valorant", entries: "100", format: "32-player knockout", city: "Mumbai", prizePool: "₹50,000" });
-  const [agentPlan, setAgentPlan] = useState("");
+  const [agentPlan, setAgentPlan] = useState<TournamentPlan | null>(null);
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentError, setAgentError] = useState("");
 
@@ -42,13 +50,13 @@ export function Home() {
       if (contentType.includes("application/json")) {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "The teammate could not create a plan.");
-        setAgentPlan(data.plan);
+        setAgentPlan(data.plan as TournamentPlan);
         return;
       }
 
       // Vite previews do not run Vercel functions, so keep the planning flow useful locally.
       const entries = Number(agentForm.entries);
-      setAgentPlan(JSON.stringify({
+      setAgentPlan({
         summary: `Run a ${agentForm.format} ${agentForm.game} tournament for ${entries} paid entries in ${agentForm.city}.`,
         checklist: [
           `Publish the event page and collect ${entries} registrations with a verified Riot ID.`,
@@ -59,7 +67,7 @@ export function Home() {
         schedule: ["T-7 days: open registrations and announce rules", "T-1 day: seed bracket and verify check-ins", "Event day: check-in, run rounds, publish results and payouts"],
         risks: ["Late check-ins or no-shows", "Unverified player identities", "Match disputes and payout delays"],
         nextAction: "Open the event workspace, confirm the rules, then publish registrations when the server-side teammate is enabled."
-      }, null, 2));
+      });
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "Try again in a moment.");
     } finally {
@@ -337,7 +345,29 @@ export function Home() {
               </div>
               <button type="button" onClick={runTournamentTeammate} disabled={agentBusy} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3 text-sm font-bold text-neutral-950 transition-colors hover:bg-white disabled:cursor-wait disabled:opacity-60"><Sparkles className="h-4 w-4" />{agentBusy ? 'Building tournament plan…' : 'Build autonomous plan'}</button>
               {agentError && <p className="mt-3 text-sm text-rose-300">{agentError}</p>}
-              {agentPlan && <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-cyan-400/20 bg-neutral-950 p-4 text-left text-xs leading-6 text-cyan-100">{agentPlan}</pre>}
+              {agentPlan && (
+    <div className="mt-4 max-h-96 overflow-auto rounded-xl border border-cyan-400/20 bg-neutral-950 p-4 text-left text-sm text-cyan-100">
+      <p className="text-base font-semibold leading-6 text-white">{agentPlan.summary}</p>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {[
+          ["Execution checklist", agentPlan.checklist],
+          ["Schedule", agentPlan.schedule],
+          ["Risks to manage", agentPlan.risks],
+        ].map(([heading, items]) => (
+          <div key={heading}>
+            <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-300">{heading}</h3>
+            <ul className="mt-2 flex flex-col gap-2 text-xs leading-5 text-neutral-300">
+              {(items as string[]).map((item) => <li key={item} className="flex gap-2"><span className="text-cyan-400">•</span><span>{item}</span></li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-lg border border-fuchsia-400/20 bg-fuchsia-400/5 p-3">
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-fuchsia-300">Next action</p>
+        <p className="mt-1 text-xs leading-5 text-neutral-200">{agentPlan.nextAction}</p>
+      </div>
+    </div>
+  )}
             </div>
           </div>
         </div>
