@@ -1,4 +1,4 @@
-import { generateText, gateway } from "ai";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== "POST") {
@@ -13,14 +13,35 @@ export default async function handler(req: Request): Promise<Response> {
       return Response.json({ error: "game, entries, format, and city are required" }, { status: 400 });
     }
 
-    const { text } = await generateText({
-      model: gateway("openai/o4-mini"),
-      system: "You are Local Arena's autonomous tournament operations teammate for Indian gaming communities. Create practical, concise plans. Never claim to have sent messages, charged money, or published an event. Return JSON with keys: summary, checklist (array of strings), schedule (array of strings), risks (array of strings), nextAction. Use INR when discussing money.",
-      prompt: JSON.stringify({ game, entries, format, city, prizePool: prizePool || "Not specified" }),
-      temperature: 0.2,
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return Response.json({ error: "The tournament teammate is not configured yet." }, { status: 503 });
+    }
+
+    const systemInstruction = "You are Local Arena's autonomous tournament operations teammate for Indian gaming communities. Create practical, concise plans. Never claim to have sent messages, charged money, or published an event. Return only valid JSON with keys: summary, checklist (array of strings), schedule (array of strings), risks (array of strings), nextAction. Use INR when discussing money.";
+    const prompt = JSON.stringify({ game, entries, format, city, prizePool: prizePool || "Not specified" });
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
+      }),
     });
 
-    return Response.json({ plan: text });
+    if (!response.ok) {
+      console.error("[v0] Gemini tournament request failed", response.status);
+      return Response.json({ error: "The tournament teammate could not create a plan." }, { status: 502 });
+    }
+
+    const result = await response.json();
+    const plan = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!plan) {
+      return Response.json({ error: "The tournament teammate returned an empty plan." }, { status: 502 });
+    }
+
+    return Response.json({ plan });
   } catch (error) {
     console.error("[v0] tournament teammate failed", error);
     return Response.json({ error: "The tournament teammate could not create a plan." }, { status: 500 });
