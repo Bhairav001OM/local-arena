@@ -43,12 +43,42 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const result = await response.json();
-    const plan = result.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!plan) {
+    const rawPlan = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawPlan) {
       return Response.json({ error: "The tournament teammate returned an empty plan." }, { status: 502 });
     }
 
-    return Response.json({ plan });
+    const withoutCodeFence = rawPlan.trim().replace(/^```(?:json)?\\s*/i, "").replace(/\\s*```$/i, "");
+    let plan: unknown;
+    try {
+      plan = JSON.parse(withoutCodeFence);
+    } catch {
+      const firstBrace = withoutCodeFence.indexOf("{");
+      const lastBrace = withoutCodeFence.lastIndexOf("}");
+      if (firstBrace < 0 || lastBrace <= firstBrace) {
+        return Response.json({ error: "The tournament teammate returned an invalid plan format." }, { status: 502 });
+      }
+      try {
+        plan = JSON.parse(withoutCodeFence.slice(firstBrace, lastBrace + 1));
+      } catch {
+        return Response.json({ error: "The tournament teammate returned an invalid plan format." }, { status: 502 });
+      }
+    }
+
+    if (!plan || typeof plan !== "object") {
+      return Response.json({ error: "The tournament teammate returned an invalid plan format." }, { status: 502 });
+    }
+
+    const candidate = plan as Record<string, unknown>;
+    const structuredPlan = {
+      summary: typeof candidate.summary === "string" ? candidate.summary : "Tournament operations plan",
+      checklist: Array.isArray(candidate.checklist) ? candidate.checklist.filter((item): item is string => typeof item === "string") : [],
+      schedule: Array.isArray(candidate.schedule) ? candidate.schedule.filter((item): item is string => typeof item === "string") : [],
+      risks: Array.isArray(candidate.risks) ? candidate.risks.filter((item): item is string => typeof item === "string") : [],
+      nextAction: typeof candidate.nextAction === "string" ? candidate.nextAction : "Review the plan and publish the event rules.",
+    };
+
+    return Response.json({ plan: structuredPlan });
   } catch (error) {
     console.error("[v0] tournament teammate failed", error);
     return Response.json({ error: "The tournament teammate could not create a plan." }, { status: 500 });
