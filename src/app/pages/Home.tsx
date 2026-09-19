@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion"; 
 import { Link } from "react-router-dom"; 
-import { ArrowRight, Trophy, Users, MonitorPlay, Zap, Search, UserPlus, Loader2, MapPin, Navigation, CalendarDays, Clock3, Star, Gamepad2, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Trophy, Users, MonitorPlay, Zap, Search, UserPlus, Loader2, MapPin, Navigation, CalendarDays, Clock3, Star, Gamepad2, CheckCircle2, Bot, Sparkles } from "lucide-react";
 import { type Tournament, fetchTournaments, searchPlayers, sendFriendRequest } from "../data"; 
 import { TournamentCard } from "../components/TournamentCard";
 import { supabase } from "../../utils/supabase"; 
@@ -24,7 +24,32 @@ export function Home() {
   const [isSearchingPlayers, setIsSearchingPlayers] = useState(false);
   const [actionMsg, setActionMsg] = useState("");
   const [selectedArena, setSelectedArena] = useState<number | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState("6:00 PM");
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
+  const [activeArenaFilter, setActiveArenaFilter] = useState("Near me");
+  const [agentForm, setAgentForm] = useState({ game: "Valorant", entries: "100", format: "32-player knockout", city: "Mumbai", prizePool: "₹50,000" });
+  const [agentPlan, setAgentPlan] = useState("");
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentError, setAgentError] = useState("");
+
+  const runTournamentTeammate = async () => {
+    setAgentBusy(true);
+    setAgentError("");
+    try {
+      const response = await fetch("/api/tournament-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...agentForm, entries: Number(agentForm.entries) }) });
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("The teammate API is not available in this preview yet. Deploy the project to enable the server-side AI teammate.");
+      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "The teammate could not create a plan.");
+      setAgentPlan(data.plan);
+    } catch (error) {
+      setAgentError(error instanceof Error ? error.message : "Try again in a moment.");
+    } finally {
+      setAgentBusy(false);
+    }
+  };
 
   useEffect(() => {
     // 1. Fetch upcoming tournaments
@@ -237,8 +262,8 @@ export function Home() {
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-3" role="list" aria-label="Arena filters">
-          {['Near me', 'PC gaming', 'Console', 'Open now'].map((filter, index) => (
-            <button key={filter} type="button" className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${index === 0 ? 'bg-white text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white hover:border-neutral-600'}`}>
+          {['Near me', 'PC gaming', 'Console', 'Open now'].map((filter) => (
+            <button key={filter} type="button" onClick={() => setActiveArenaFilter(filter)} aria-pressed={activeArenaFilter === filter} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${activeArenaFilter === filter ? 'bg-white text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white hover:border-neutral-600'}`}>
               {filter}
             </button>
           ))}
@@ -260,7 +285,7 @@ export function Home() {
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">{arena.tags.map((tag) => <span key={tag} className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-400">{tag}</span>)}</div>
                 <div className="mt-5 flex items-center justify-between border-t border-neutral-800 pt-4 text-sm"><span className="text-neutral-400"><strong className="text-white">{arena.price}</strong> onwards</span><span className="text-cyan-300">{arena.slots} slots left</span></div>
-                <button type="button" onClick={() => { setSelectedArena(arena.id); setBookingConfirmed(false); }} className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-black hover:bg-cyan-300 transition-colors">View slots & book</button>
+                <button type="button" onClick={() => { setSelectedArena(arena.id); setSelectedSlot("6:00 PM"); setBookingConfirmed(false); }} className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-black hover:bg-cyan-300 transition-colors">View slots & book</button>
               </div>
             </motion.article>
           ))}
@@ -269,15 +294,53 @@ export function Home() {
         {selectedArena && (
           <div className="mt-6 rounded-2xl border border-cyan-400/30 bg-cyan-400/10 p-5 sm:p-6" role="dialog" aria-label="Book arena slot">
             {bookingConfirmed ? (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><CheckCircle2 className="w-7 h-7 text-emerald-300" /><div><p className="font-bold text-white">Slot held for your squad.</p><p className="text-sm text-neutral-300">This demo booking is ready to connect to arena availability when a backend is added.</p></div></div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><CheckCircle2 className="w-7 h-7 text-emerald-300" /><div><p className="font-bold text-white">Slot held for your squad.</p><p className="text-sm text-neutral-300">{selectedSlot} is reserved in this demo. Share the arena with your squad and get playing.</p></div></div>
             ) : (
-              <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between"><div><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Quick booking</p><h3 className="mt-1 text-xl font-bold text-white">Reserve a 2-hour gaming session</h3><div className="mt-3 flex flex-wrap gap-4 text-sm text-neutral-300"><span className="inline-flex items-center gap-2"><CalendarDays className="w-4 h-4 text-cyan-300" /> Today</span><span className="inline-flex items-center gap-2"><Clock3 className="w-4 h-4 text-cyan-300" /> 6:00 PM</span><span className="inline-flex items-center gap-2"><Gamepad2 className="w-4 h-4 text-cyan-300" /> 1 setup</span></div></div><button type="button" onClick={() => setBookingConfirmed(true)} className="rounded-xl bg-cyan-300 px-6 py-3 text-sm font-bold text-neutral-950 hover:bg-white transition-colors">Confirm slot</button></div>
+              <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between"><div><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Quick booking</p><h3 className="mt-1 text-xl font-bold text-white">Reserve a 2-hour gaming session</h3><div className="mt-3 flex flex-wrap gap-2" aria-label="Available time slots">{["4:00 PM", "6:00 PM", "8:00 PM"].map((slot) => <button key={slot} type="button" onClick={() => setSelectedSlot(slot)} aria-pressed={selectedSlot === slot} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${selectedSlot === slot ? "border-cyan-300 bg-cyan-300 text-neutral-950" : "border-neutral-700 bg-neutral-950 text-neutral-300 hover:border-cyan-400"}`}><Clock3 className="mr-1 inline h-4 w-4" />{slot}</button>)}</div><div className="mt-3 flex flex-wrap gap-4 text-sm text-neutral-300"><span className="inline-flex items-center gap-2"><CalendarDays className="w-4 h-4 text-cyan-300" /> Today</span><span className="inline-flex items-center gap-2"><Gamepad2 className="w-4 h-4 text-cyan-300" /> 1 setup</span></div></div><button type="button" onClick={() => setBookingConfirmed(true)} className="rounded-xl bg-cyan-300 px-6 py-3 text-sm font-bold text-neutral-950 hover:bg-white transition-colors">Confirm {selectedSlot}</button></div>
             )}
           </div>
         )}
       </section>
 
-      {/* 4. Features Section */}
+      {/* 4. Autonomous tournament teammate */}
+      <section className="w-full max-w-7xl mt-20 sm:mt-28 px-4 sm:px-6 lg:px-8" aria-labelledby="teammate-heading">
+        <div className="overflow-hidden rounded-3xl border border-cyan-400/20 bg-gradient-to-br from-cyan-950/40 via-neutral-900 to-fuchsia-950/30 p-6 sm:p-10">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-xl">
+              <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300"><Bot className="h-4 w-4" /> Autonomous teammate</p>
+              <h2 id="teammate-heading" className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">Plan your tournament with AI.</h2>
+              <p className="mt-3 text-neutral-300">Describe your event and get an operations plan for entries, brackets, venue timing, and community readiness. Your teammate prepares the plan; you approve every real-world action.</p>
+            </div>
+            <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-black/20 p-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {([['game', 'Game'], ['entries', 'Entries'], ['format', 'Format'], ['city', 'City'], ['prizePool', 'Prize pool']] as const).map(([key, label]) => (
+                  <label key={key} className="text-xs font-semibold uppercase tracking-wide text-neutral-400">{label}
+                    <input value={agentForm[key]} onChange={(event) => setAgentForm({ ...agentForm, [key]: event.target.value })} className="mt-2 w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-white outline-none transition-colors focus:border-cyan-400" />
+                  </label>
+                ))}
+              </div>
+              <button type="button" onClick={runTournamentTeammate} disabled={agentBusy} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3 text-sm font-bold text-neutral-950 transition-colors hover:bg-white disabled:cursor-wait disabled:opacity-60"><Sparkles className="h-4 w-4" />{agentBusy ? 'Building tournament plan…' : 'Build autonomous plan'}</button>
+              {agentError && <p className="mt-3 text-sm text-rose-300">{agentError}</p>}
+              {agentPlan && <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-cyan-400/20 bg-neutral-950 p-4 text-left text-xs leading-6 text-cyan-100">{agentPlan}</pre>}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. Community hub */}
+      <section className="w-full max-w-7xl mt-20 sm:mt-28 px-4 sm:px-6 lg:px-8" aria-labelledby="community-heading">
+        <div className="rounded-3xl border border-fuchsia-500/20 bg-gradient-to-br from-fuchsia-950/30 via-neutral-900 to-cyan-950/20 p-6 sm:p-10">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+            <div><p className="text-sm font-semibold uppercase tracking-[0.22em] text-fuchsia-300">India&apos;s gaming community</p><h2 id="community-heading" className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">Meet your next squad.</h2><p className="mt-3 max-w-2xl text-neutral-300">Connect with local players, join open events, or give your community a place to compete. Local Arena brings online players and offline arenas together.</p></div>
+            <Link to="/host" className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-neutral-950 transition-colors hover:bg-cyan-300">Host a community event <ArrowRight className="h-4 w-4" /></Link>
+          </div>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {[{ label: "Players online", value: "12.8K", icon: Users }, { label: "Events this week", value: "86", icon: Trophy }, { label: "Arenas across India", value: "240+", icon: MapPin }].map((stat) => <div key={stat.label} className="rounded-2xl border border-white/10 bg-black/20 p-4"><stat.icon className="h-5 w-5 text-cyan-300" /><p className="mt-4 text-2xl font-bold text-white">{stat.value}</p><p className="mt-1 text-sm text-neutral-400">{stat.label}</p></div>)}
+          </div>
+        </div>
+      </section>
+
+      {/* 5. Features Section */}
       <div className="mx-auto mt-24 max-w-7xl px-6 sm:mt-32 lg:px-8 border-t border-neutral-900 pt-16">
         <div className="mx-auto max-w-2xl lg:text-center">
           <h2 className="text-base font-semibold leading-7 text-fuchsia-500 uppercase tracking-widest">Compete</h2>
