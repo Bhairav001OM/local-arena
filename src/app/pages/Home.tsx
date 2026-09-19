@@ -1,11 +1,17 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion"; 
 import { Link } from "react-router-dom"; 
-import { ArrowRight, Trophy, Users, MonitorPlay, Zap, Search, UserPlus, Loader2 } from "lucide-react";
+import { ArrowRight, Trophy, Users, MonitorPlay, Zap, Search, UserPlus, Loader2, MapPin, Navigation, CalendarDays, Clock3, Star, Gamepad2, CheckCircle2 } from "lucide-react";
 import { type Tournament, fetchTournaments, searchPlayers, sendFriendRequest } from "../data"; 
 import { TournamentCard } from "../components/TournamentCard";
 import { supabase } from "../../utils/supabase"; 
 import { useAuth } from "../context/AuthContext";
+
+const ARENAS = [
+  { id: 1, name: "Pixel District Gaming Lounge", area: "Andheri West", distance: "1.2 km", rating: "4.9", price: "₹120/hr", image: "https://images.unsplash.com/photo-1593305841991-05c297ba4575?auto=format&fit=crop&q=80&w=900", tags: ["PC", "PS5", "24/7"], slots: 8 },
+  { id: 2, name: "The Respawn Room", area: "Powai", distance: "3.8 km", rating: "4.8", price: "₹150/hr", image: "https://images.unsplash.com/photo-1547394765-185e1e68f34e?auto=format&fit=crop&q=80&w=900", tags: ["PC", "Sim Racing"], slots: 4 },
+  { id: 3, name: "Game On Arena", area: "Bandra East", distance: "5.1 km", rating: "4.7", price: "₹100/hr", image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=900", tags: ["PC", "Console"], slots: 6 },
+];
 
 export function Home() {
   const { session } = useAuth();
@@ -17,6 +23,8 @@ export function Home() {
   const [players, setPlayers] = useState<any[]>([]);
   const [isSearchingPlayers, setIsSearchingPlayers] = useState(false);
   const [actionMsg, setActionMsg] = useState("");
+  const [selectedArena, setSelectedArena] = useState<number | null>(null);
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
 
   useEffect(() => {
     // 1. Fetch upcoming tournaments
@@ -215,7 +223,61 @@ export function Home() {
         </div>
       </div>
 
-      {/* 3. Features Section */}
+      {/* 3. Nearby Arena Finder */}
+      <section className="w-full max-w-7xl mt-20 sm:mt-28 px-4 sm:px-6 lg:px-8" aria-labelledby="arena-heading">
+        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between mb-8">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-400 mb-3">Play in person</p>
+            <h2 id="arena-heading" className="text-3xl sm:text-4xl font-bold tracking-tight text-white">Find your arena</h2>
+            <p className="text-neutral-400 mt-3 max-w-xl">Discover trusted gaming lounges nearby, check live availability, and reserve your setup before you arrive.</p>
+          </div>
+          <button type="button" className="inline-flex items-center gap-2 self-start rounded-full border border-cyan-400/30 bg-cyan-400/10 px-5 py-2.5 text-sm font-semibold text-cyan-300 hover:bg-cyan-400/20 transition-colors">
+            <Navigation className="w-4 h-4" /> Use my location
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-3" role="list" aria-label="Arena filters">
+          {['Near me', 'PC gaming', 'Console', 'Open now'].map((filter, index) => (
+            <button key={filter} type="button" className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${index === 0 ? 'bg-white text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white hover:border-neutral-600'}`}>
+              {filter}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-3">
+          {ARENAS.map((arena) => (
+            <motion.article key={arena.id} className="group overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/70 shadow-xl" whileHover={{ y: -4 }}>
+              <div className="relative h-44 overflow-hidden">
+                <img src={arena.image} alt={`${arena.name} gaming setup`} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/90 via-transparent to-transparent" />
+                <span className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-400/30"><span className="size-1.5 rounded-full bg-emerald-300" /> Open now</span>
+                <span className="absolute bottom-4 left-4 inline-flex items-center gap-1 text-sm text-white"><MapPin className="w-4 h-4 text-cyan-300" /> {arena.distance} away</span>
+              </div>
+              <div className="p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div><h3 className="text-lg font-bold text-white">{arena.name}</h3><p className="mt-1 text-sm text-neutral-500">{arena.area}</p></div>
+                  <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-300"><Star className="w-4 h-4 fill-current" /> {arena.rating}</span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">{arena.tags.map((tag) => <span key={tag} className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-400">{tag}</span>)}</div>
+                <div className="mt-5 flex items-center justify-between border-t border-neutral-800 pt-4 text-sm"><span className="text-neutral-400"><strong className="text-white">{arena.price}</strong> onwards</span><span className="text-cyan-300">{arena.slots} slots left</span></div>
+                <button type="button" onClick={() => { setSelectedArena(arena.id); setBookingConfirmed(false); }} className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-black hover:bg-cyan-300 transition-colors">View slots & book</button>
+              </div>
+            </motion.article>
+          ))}
+        </div>
+
+        {selectedArena && (
+          <div className="mt-6 rounded-2xl border border-cyan-400/30 bg-cyan-400/10 p-5 sm:p-6" role="dialog" aria-label="Book arena slot">
+            {bookingConfirmed ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><CheckCircle2 className="w-7 h-7 text-emerald-300" /><div><p className="font-bold text-white">Slot held for your squad.</p><p className="text-sm text-neutral-300">This demo booking is ready to connect to arena availability when a backend is added.</p></div></div>
+            ) : (
+              <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between"><div><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Quick booking</p><h3 className="mt-1 text-xl font-bold text-white">Reserve a 2-hour gaming session</h3><div className="mt-3 flex flex-wrap gap-4 text-sm text-neutral-300"><span className="inline-flex items-center gap-2"><CalendarDays className="w-4 h-4 text-cyan-300" /> Today</span><span className="inline-flex items-center gap-2"><Clock3 className="w-4 h-4 text-cyan-300" /> 6:00 PM</span><span className="inline-flex items-center gap-2"><Gamepad2 className="w-4 h-4 text-cyan-300" /> 1 setup</span></div></div><button type="button" onClick={() => setBookingConfirmed(true)} className="rounded-xl bg-cyan-300 px-6 py-3 text-sm font-bold text-neutral-950 hover:bg-white transition-colors">Confirm slot</button></div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* 4. Features Section */}
       <div className="mx-auto mt-24 max-w-7xl px-6 sm:mt-32 lg:px-8 border-t border-neutral-900 pt-16">
         <div className="mx-auto max-w-2xl lg:text-center">
           <h2 className="text-base font-semibold leading-7 text-fuchsia-500 uppercase tracking-widest">Compete</h2>
