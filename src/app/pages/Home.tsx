@@ -38,12 +38,28 @@ export function Home() {
     try {
       const response = await fetch("/api/tournament-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...agentForm, entries: Number(agentForm.entries) }) });
       const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("application/json")) {
-        throw new Error("The teammate API is not available in this preview yet. Deploy the project to enable the server-side AI teammate.");
+
+      if (contentType.includes("application/json")) {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "The teammate could not create a plan.");
+        setAgentPlan(data.plan);
+        return;
       }
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "The teammate could not create a plan.");
-      setAgentPlan(data.plan);
+
+      // Vite previews do not run Vercel functions, so keep the planning flow useful locally.
+      const entries = Number(agentForm.entries);
+      setAgentPlan(JSON.stringify({
+        summary: `Run a ${agentForm.format} ${agentForm.game} tournament for ${entries} paid entries in ${agentForm.city}.`,
+        checklist: [
+          `Publish the event page and collect ${entries} registrations with a verified Riot ID.`,
+          "Lock the 32-player bracket, check-in window, and substitute policy.",
+          `Confirm arena capacity, admins, match servers, and the ${agentForm.prizePool || "prize pool"} payout rules.`,
+          "Send match-room links, report results, and escalate disputes to the tournament admin."
+        ],
+        schedule: ["T-7 days: open registrations and announce rules", "T-1 day: seed bracket and verify check-ins", "Event day: check-in, run rounds, publish results and payouts"],
+        risks: ["Late check-ins or no-shows", "Unverified player identities", "Match disputes and payout delays"],
+        nextAction: "Deploy the project to replace this preview plan with the server-side AI teammate."
+      }, null, 2));
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "Try again in a moment.");
     } finally {
