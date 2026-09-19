@@ -58,7 +58,7 @@ export function Home() {
         ],
         schedule: ["T-7 days: open registrations and announce rules", "T-1 day: seed bracket and verify check-ins", "Event day: check-in, run rounds, publish results and payouts"],
         risks: ["Late check-ins or no-shows", "Unverified player identities", "Match disputes and payout delays"],
-        nextAction: "Deploy the project to replace this preview plan with the server-side AI teammate."
+        nextAction: "Open the event workspace, confirm the rules, then publish registrations when the server-side teammate is enabled."
       }, null, 2));
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "Try again in a moment.");
